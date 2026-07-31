@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# venv
+.venv/
+
+# Playwright 浏览器二进制（太大，用 pip install playwright + playwright install chromium 重建）
+.pw-browsers/
+
+# 登录态（含个人 cookie，不上传）
+state/*.json
+
+# 调试截图
+tests/*.png
+
+# pytest
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志
+*.log
+
+# 本地工作区记忆（路径含个人本地路径，不适合上库）
+.workbuddy/
+
+# OS
+.DS_Store
+Thumbs.db

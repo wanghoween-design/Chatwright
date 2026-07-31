@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>Mock Chat — Chatwright 演示页</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 48px; max-width: 720px; }
+  h2 { color: #335; }
+  #input { width: 100%; height: 64px; padding: 8px; font-size: 15px; box-sizing: border-box; }
+  #send { margin-top: 8px; padding: 8px 20px; font-size: 15px; cursor: pointer; }
+  .reply {
+    background: #f3f5f9; border: 1px solid #dfe3ea; padding: 12px;
+    margin-top: 12px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <h2>Mock Chat（Chatwright 本地演示页）</h2>
+  <p>这是一个纯前端"假网页 AI"，用于演示 Chatwright 的端到端对话流水线，无需任何登录。</p>
+  <textarea id="input" placeholder="输入消息…"></textarea>
+  <br />
+  <button id="send">发送</button>
+  <div id="replies"></div>
+
+  <script>
+    const replies = document.getElementById('replies');
+    const input = document.getElementById('input');
+    const send = document.getElementById('send');
+    const CANNED = "这是来自网页 AI 的模拟回复。Chatwright 通过浏览器驱动，无需任何 API key 即可与网页 AI 对话——这正是 RPA 封装成 MCP 的精髓。";
+
+    function stream(text) {
+      // 新建一个 .reply 作为"正在生成"的气泡，逐字填充以模拟流式输出
+      const el = document.createElement('div');
+      el.className = 'reply';
+      replies.appendChild(el);
+      let i = 0;
+      const timer = setInterval(() => {
+        el.textContent = text.slice(0, ++i);
+        if (i >= text.length) clearInterval(timer);
+      }, 35);
+    }
+
+    send.addEventListener('click', () => {
+      const msg = input.value.trim();
+      if (!msg) return;
+      stream(CANNED);
+      input.value = '';
+    });
+  </script>
+</body>
+</html>
