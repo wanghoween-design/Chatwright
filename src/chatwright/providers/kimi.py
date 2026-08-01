@@ -19,6 +19,10 @@ DEFAULT_URL = "https://www.kimi.com/"
 
 
 class KimiProvider(WebChatProvider):
+    # Kimi 回复较慢，给足稳定期；消息区在 .message-list 里
+    WAIT_STABLE: float = 5.0
+    WAIT_MIN: float = 12.0
+
     def __init__(self, page: Page, base_url: str = DEFAULT_URL):
         super().__init__(page, base_url)
 
@@ -64,6 +68,9 @@ class KimiProvider(WebChatProvider):
             "[class*='markdown-body']"
         )
 
+    async def _message_container(self) -> str:
+        return ".message-list"
+
     async def _check_interrupt(self) -> None:
         """发送后如果弹出登录框，说明必须登录才能对话，快速失败给用户明确提示。"""
         modal = (
@@ -71,7 +78,9 @@ class KimiProvider(WebChatProvider):
             .or_(self.page.locator("text=手机号登录"))
             .or_(self.page.locator("text=扫码登录"))
         )
-        if await modal.count() > 0 and await modal.first.is_visible():
+        visible = await modal.count() > 0 and await modal.first.is_visible()
+        # 宽限期：Kimi 打开页面会先闪登录界面，1-2 秒后自动登录，不能立即判定失败
+        if self._modal_persisted(visible):
             raise RuntimeError(
                 "Kimi 需要先登录才能对话：请点击页面上 Kimi 卡片里的「去登录」，"
                 "在弹出的浏览器窗口完成登录后再试。"

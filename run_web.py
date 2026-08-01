@@ -28,6 +28,24 @@ except ImportError:
     sys.exit(1)
 
 if __name__ == "__main__":
+    # 先释放 8765 端口：如果旧版服务还占着端口，bat 检测到"已在运行"会跳过启动，
+    # 导致一直跑旧代码。这里自动结束占用进程，保证加载的是最新版本。
+    try:
+        import subprocess
+
+        out = subprocess.run(["netstat", "-ano"], capture_output=True, text=True, timeout=10).stdout
+        pids = set()
+        for line in out.splitlines():
+            if ":8765" in line and "LISTENING" in line:
+                parts = line.split()
+                if parts and parts[-1].isdigit():
+                    pids.add(parts[-1])
+        for pid in pids:
+            subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, timeout=10)
+        if pids:
+            print(f"[Chatwright] 已结束占用端口 8765 的旧进程（PID: {', '.join(sorted(pids))}），确保加载最新代码")
+    except Exception:
+        pass
     print("Chatwright Web UI 已启动 → http://127.0.0.1:8765")
     # 服务就绪后自动打开浏览器（设 CHATWRIGHT_NO_BROWSER=1 可关闭自动打开）
     if os.environ.get("CHATWRIGHT_NO_BROWSER") != "1":

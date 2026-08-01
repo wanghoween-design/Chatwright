@@ -33,6 +33,11 @@
   }
   header h1 { margin: 0; font-size: 24px; }
   header p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+  .ver {
+    font-size: 12px; color: var(--muted); font-weight: 400;
+    background: #eef0f5; border-radius: 999px; padding: 2px 8px;
+    vertical-align: middle; margin-left: 4px;
+  }
 
   .layout {
     max-width: 1280px;
@@ -70,6 +75,13 @@
     margin-bottom: 10px;
   }
   .new-conv:hover { opacity: 0.92; }
+  .headless-toggle {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; color: var(--muted);
+    padding: 6px 2px 8px; cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--line); margin-bottom: 8px;
+  }
+  .headless-toggle:hover { color: var(--text); }
   #conv-list {
     overflow-y: auto;
     display: flex;
@@ -236,6 +248,11 @@
     border-radius: 6px; font-size: 12px; padding: 3px 10px; cursor: pointer;
   }
   .card .copy:hover { color: var(--text); }
+  .card .stop {
+    border: 1px solid var(--err); background: #fff; color: var(--err);
+    border-radius: 6px; font-size: 12px; padding: 3px 12px; cursor: pointer;
+  }
+  .card .stop:hover { background: #fdeaea; }
   .spinner {
     width: 14px; height: 14px; border-radius: 50%;
     border: 2px solid #c7d4f5; border-top-color: var(--primary);
@@ -265,6 +282,13 @@
   .opt { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
   .opt select, .opt input[type="file"] { font-size: 12.5px; max-width: 220px; }
   .opt-hint { color: var(--muted); font-size: 12px; }
+  .plat-opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .plat-opt {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 12.5px; padding: 3px 10px; border: 1px solid var(--line);
+    border-radius: 999px; background: #fafbfe; cursor: pointer; user-select: none;
+  }
+  .plat-opt:has(input:checked) { background: #eff4ff; border-color: var(--primary); }
   .empty {
     text-align: center; color: var(--muted); font-size: 14px;
     padding: 40px 0;
@@ -285,13 +309,16 @@
 </head>
 <body>
 <header>
-  <h1>🦐 Chatwright</h1>
+  <h1>🦐 Chatwright <span id="ver" class="ver"></span></h1>
   <p>一条消息同时发给多个网页 AI，默认在同一对话里继续，可新建 / 切回旧对话。</p>
 </header>
 
 <main class="layout">
   <aside class="sidebar">
     <button class="new-conv" id="new-conv">＋ 新建对话</button>
+    <label class="headless-toggle">
+      <input type="checkbox" id="headless-mode"> 无头模式（不弹浏览器窗口）
+    </label>
     <div id="conv-list"></div>
   </aside>
 
@@ -305,12 +332,11 @@
     <section class="composer">
       <textarea id="input" placeholder="输入你想问的问题，比如：用一句话介绍你自己（Ctrl+Enter 发送）"></textarea>
       <div class="opts">
-        <label class="opt"><input type="checkbox" id="opt-thinking"> 思考模式</label>
+        <div class="plat-opts" id="plat-opts"></div>
         <label class="opt">模型
           <select id="opt-model"><option value="">默认</option></select>
         </label>
         <label class="opt">附件 <input type="file" id="opt-file"></label>
-        <span class="opt-hint">选项对本次勾选的所有平台生效</span>
       </div>
       <div class="row">
         <div class="platforms" id="platforms"></div>
@@ -422,9 +448,12 @@ function renderRounds() {
       </div>
       <div class="grid"></div>`;
     const grid = div.querySelector(".grid");
-    grid.innerHTML = round.platforms.map((id) => cardHtml(id, round.results[id])).join("");
+    grid.innerHTML = round.platforms.map((id) => cardHtml(id, round.results[id], round.jobId)).join("");
     grid.querySelectorAll("[data-copy]").forEach((btn) => {
       btn.addEventListener("click", () => copyText(btn.dataset.copy, btn));
+    });
+    grid.querySelectorAll("[data-stop]").forEach((btn) => {
+      btn.addEventListener("click", () => stopPlatform(btn.dataset.stop));
     });
     roundsBox.appendChild(div);
   });
@@ -501,8 +530,28 @@ function renderPlatforms() {
         return;
       }
       chip.classList.toggle("on");
+      renderPlatOpts();
     });
     box.appendChild(chip);
+  });
+  renderPlatOpts();
+}
+
+function renderPlatOpts() {
+  const box = $("#plat-opts");
+  const picks = selectedPlatforms();
+  if (!picks.length) {
+    box.innerHTML = `<span class="opt-hint">勾选平台后，可在这里单独开启各平台的思考模式</span>`;
+    return;
+  }
+  box.innerHTML = "";
+  picks.forEach((id) => {
+    const p = platformMeta[id];
+    if (!p) return;
+    const lab = document.createElement("label");
+    lab.className = "plat-opt";
+    lab.innerHTML = `<input type="checkbox" data-think="${id}"> ${escapeHtml(p.label)} 思考`;
+    box.appendChild(lab);
   });
 }
 
@@ -573,7 +622,11 @@ async function sendMessage() {
 
   sendBtn.disabled = true;
   try {
-    const options = { thinking: $("#opt-thinking").checked, model: $("#opt-model").value };
+    const thinking = {};
+    document.querySelectorAll("#plat-opts input[data-think]").forEach((cb) => {
+      thinking[cb.dataset.think] = cb.checked;
+    });
+    const options = { thinking, model: $("#opt-model").value };
     const fileInput = $("#opt-file");
     if (fileInput.files && fileInput.files.length) {
       const fd = new FormData();
@@ -627,7 +680,7 @@ async function pollJob(jobId) {
   }
 }
 
-function cardHtml(id, res) {
+function cardHtml(id, res, jobId) {
   const p = platformMeta[id];
   if (!p) return "";
   const state = res ? res.status : "wait";
@@ -636,6 +689,7 @@ function cardHtml(id, res) {
     running: ["run", "对话中"],
     done: ["ok", "完成"],
     error: ["err", "失败"],
+    stopped: ["wait", "已停止"],
   }[state] || ["wait", "等待中"];
 
   let body, foot = `<span class="elapsed"></span>`;
@@ -647,6 +701,8 @@ function cardHtml(id, res) {
     body = `<div class="body err">${escapeHtml(res.error || "未知错误")}</div>`;
   } else if (state === "running") {
     body = `<div class="body" style="color:var(--muted)">正在网页里输入并等待 AI 流式回复…</div>`;
+    foot = `<span class="elapsed"></span>
+            <button class="stop" data-stop="${jobId}|${id}">停止</button>`;
   } else {
     body = `<div class="body" style="color:var(--muted)">排队中…</div>`;
   }
@@ -661,6 +717,20 @@ function cardHtml(id, res) {
       ${body}
       <div class="foot">${foot}</div>
     </div>`;
+}
+
+async function stopPlatform(key) {
+  const [jobId, id] = key.split("|");
+  try {
+    await fetch(`/api/jobs/${jobId}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platforms: [id] }),
+    }).then((r) => r.json());
+    toast("已请求停止" + (platformMeta[id] ? platformMeta[id].label : id));
+  } catch (e) {
+    toast("停止失败：" + (e.message || e));
+  }
 }
 
 function copyText(text, btn) {
@@ -778,6 +848,21 @@ $("#loginbox").addEventListener("click", (e) => {
   if (btn) finishLogin(btn.dataset.finish === "save");
 });
 $("#retry-platforms").addEventListener("click", () => loadPlatforms(3));
+$("#headless-mode").addEventListener("change", async (e) => {
+  const headless = e.target.checked;
+  try {
+    await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ headless }),
+    }).then((r) => r.json());
+    toast(headless
+      ? "已开启无头模式：豆包/元宝/Kimi 不再弹窗口（如失效可点右上角开关关回）"
+      : "已关闭无头模式：恢复常驻窗口");
+  } catch {
+    toast("设置失败，请确认服务已重启到 v1.4.0");
+  }
+});
 
 // ---------------------------------------------------------------- 初始化
 if (location.protocol === "file:") {
@@ -787,6 +872,14 @@ if (location.protocol === "file:") {
 } else {
   newConversation(); // 默认先建一个对话
   loadPlatforms();
+  fetch("/api/config")
+    .then((r) => r.json())
+    .then((c) => { $("#headless-mode").checked = !!c.headless; })
+    .catch(() => {});
+  fetch("/api/version")
+    .then((r) => r.json())
+    .then((v) => { $("#ver").textContent = "v" + v.version; })
+    .catch(() => {});
 }
 </script>
 </body>

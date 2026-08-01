@@ -17,6 +17,13 @@ DEFAULT_URL = "https://yuanbao.tencent.com/chat/"
 
 
 class YuanbaoProvider(WebChatProvider):
+    # 元宝长回答易截断：更长稳定期 + 最短等待，并支持「继续生成」
+    WAIT_STABLE: float = 5.0
+    WAIT_MIN: float = 12.0
+
+    def _prefer_census(self) -> bool:
+        return True  # 元宝回复区结构多变，优先用全页文字普查
+
     def __init__(self, page: Page, base_url: str = DEFAULT_URL):
         super().__init__(page, base_url)
 
@@ -40,12 +47,17 @@ class YuanbaoProvider(WebChatProvider):
             "[class*='answer']"
         )
 
+    async def _message_container(self) -> str:
+        return "[class*='chat']"
+
     async def _check_interrupt(self) -> None:
         """发送后若弹出微信扫码登录框，快速失败并提示用户先登录。"""
         modal = self.page.locator("[class*='hyc-login']").or_(
             self.page.locator("text=请使用微信扫描二维码登录")
         )
-        if await modal.count() > 0 and await modal.first.is_visible():
+        visible = await modal.count() > 0 and await modal.first.is_visible()
+        # 宽限期：元宝打开页面也可能先闪登录界面再自动登录
+        if self._modal_persisted(visible):
             raise RuntimeError(
                 "元宝需要登录才能对话：请点击页面上元宝卡片里的「去登录」，"
                 "在弹出窗口里用微信 / 手机 / QQ 完成登录后重试。"
