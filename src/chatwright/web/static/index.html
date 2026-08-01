@@ -243,6 +243,28 @@
     display: inline-block; flex: none;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Markdown 渲染 ---------- */
+  .md-p { margin: 4px 0; }
+  .md-h { margin: 8px 0 4px; }
+  .md-table { border-collapse: collapse; margin: 8px 0; font-size: 12.5px; max-width: 100%; display: block; overflow-x: auto; }
+  .md-table th, .md-table td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+  .md-table th { background: #f0f4fb; }
+  .md-code { background: #f6f8fa; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; font-size: 12px; white-space: pre; }
+  .md-code-inline { background: #eef1f6; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .md-quote { border-left: 3px solid var(--primary); margin: 6px 0; padding: 2px 10px; color: var(--muted); }
+  .md-li { margin-left: 18px; }
+  .md-link { color: var(--primary); }
+
+  /* ---------- 发送选项 ---------- */
+  .opts {
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line);
+    font-size: 13px; color: var(--text);
+  }
+  .opt { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .opt select, .opt input[type="file"] { font-size: 12.5px; max-width: 220px; }
+  .opt-hint { color: var(--muted); font-size: 12px; }
   .empty {
     text-align: center; color: var(--muted); font-size: 14px;
     padding: 40px 0;
@@ -282,6 +304,14 @@
 
     <section class="composer">
       <textarea id="input" placeholder="输入你想问的问题，比如：用一句话介绍你自己（Ctrl+Enter 发送）"></textarea>
+      <div class="opts">
+        <label class="opt"><input type="checkbox" id="opt-thinking"> 思考模式</label>
+        <label class="opt">模型
+          <select id="opt-model"><option value="">默认</option></select>
+        </label>
+        <label class="opt">附件 <input type="file" id="opt-file"></label>
+        <span class="opt-hint">选项对本次勾选的所有平台生效</span>
+      </div>
       <div class="row">
         <div class="platforms" id="platforms"></div>
         <div class="buttons">
@@ -411,6 +441,7 @@ async function loadPlatforms(tries = 3) {
       platformMeta = {};
       list.forEach((p) => { platformMeta[p.id] = p; });
       renderPlatforms();
+      renderModelSelect();
       errBox.hidden = true;
       return;
     } catch (e) {
@@ -421,6 +452,22 @@ async function loadPlatforms(tries = 3) {
       }
     }
   }
+}
+
+function renderModelSelect() {
+  const sel = $("#opt-model");
+  const models = new Set();
+  Object.values(platformMeta).forEach((p) => (p.models || []).forEach((m) => models.add(m)));
+  const current = sel.value;
+  sel.innerHTML = '<option value="">默认</option>';
+  [...models].forEach((m) => {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = m;
+    sel.appendChild(o);
+  });
+  sel.value = [...models].includes(current) ? current : "";
+  sel.disabled = models.size === 0;
 }
 
 function renderPlatforms() {
@@ -526,10 +573,20 @@ async function sendMessage() {
 
   sendBtn.disabled = true;
   try {
+    const options = { thinking: $("#opt-thinking").checked, model: $("#opt-model").value };
+    const fileInput = $("#opt-file");
+    if (fileInput.files && fileInput.files.length) {
+      const fd = new FormData();
+      fd.append("file", fileInput.files[0]);
+      const up = await fetch("/api/upload", { method: "POST", body: fd }).then((r) => r.json());
+      options.file = up.path;
+      fileInput.value = "";
+      toast(`已附带文件：${up.name || "附件"}`);
+    }
     const { job_id } = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, platforms: picks, conv_id: conv.id }),
+      body: JSON.stringify({ message, platforms: picks, conv_id: conv.id, options }),
     }).then((r) => r.json());
 
     if (conv.title === "新对话") conv.title = message.slice(0, 24);
@@ -583,7 +640,7 @@ function cardHtml(id, res) {
 
   let body, foot = `<span class="elapsed"></span>`;
   if (state === "done") {
-    body = `<div class="body">${escapeHtml(res.reply || "(空回复)")}</div>`;
+    body = `<div class="body md">${renderMarkdown(res.reply || "(空回复)")}</div>`;
     foot = `<span class="elapsed">${res.elapsed}s</span>
             <button class="copy" data-copy="${escapeAttr(res.reply || "")}">复制</button>`;
   } else if (state === "error") {
@@ -620,6 +677,86 @@ function escapeHtml(s) {
   }[c]));
 }
 function escapeAttr(s) { return escapeHtml(s).replace(/\n/g, "&#10;"); }
+
+// ---------------------------------------------------------------- Markdown
+function renderMarkdown(src) {
+  const lines = String(src || "").replace(/\r\n/g, "\n").split("\n");
+  let html = "";
+  let i = 0;
+  let inCode = false, codeBuf = [], codeLang = "";
+  let tableBuf = null;
+  const flushTable = () => {
+    if (tableBuf) { html += buildTable(tableBuf); tableBuf = null; }
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line.trim())) {
+      flushTable();
+      if (inCode) {
+        html += `<pre class="md-code"><code>${escapeHtml(codeBuf.join("\n"))}</code></pre>`;
+        codeBuf = []; inCode = false;
+      } else {
+        codeLang = line.trim().slice(3).trim();
+        inCode = true;
+      }
+      i++; continue;
+    }
+    if (inCode) { codeBuf.push(line); i++; continue; }
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (!tableBuf) tableBuf = [];
+      tableBuf.push(line); i++; continue;
+    }
+    flushTable();
+    const t = line.trim();
+    if (!t) { i++; continue; }
+    if (/^#{1,6}\s/.test(t)) {
+      const level = t.match(/^#{1,6}/)[0].length;
+      html += `<h${Math.min(level, 4)} class="md-h">${inlineMd(t.replace(/^#{1,6}\s*/, ""))}</h${Math.min(level, 4)}>`;
+    } else if (/^\s*[-*+]\s+/.test(t)) {
+      html += `<div class="md-li">• ${inlineMd(t.replace(/^\s*[-*+]\s+/, ""))}</div>`;
+    } else if (/^\s*\d+\.\s+/.test(t)) {
+      html += `<div class="md-li">${inlineMd(t.replace(/^\s*\d+\.\s+/, ""))}</div>`;
+    } else if (/^\s*>\s?/.test(t)) {
+      html += `<blockquote class="md-quote">${inlineMd(t.replace(/^\s*>\s?/, ""))}</blockquote>`;
+    } else {
+      html += `<p class="md-p">${inlineMd(t)}</p>`;
+    }
+    i++;
+  }
+  flushTable();
+  if (inCode) html += `<pre class="md-code"><code>${escapeHtml(codeBuf.join("\n"))}</code></pre>`;
+  return html;
+}
+
+function inlineMd(s) {
+  let h = escapeHtml(s);
+  h = h.replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener">图片：$1</a>');
+  h = h.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener">$1</a>');
+  h = h.replace(/`([^`]+)`/g, '<code class="md-code-inline">$1</code>');
+  h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  return h;
+}
+
+function buildTable(rows) {
+  const cells = rows.map((r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()));
+  let start = 0;
+  const isSep = (r) => r && r.length && r.every((c) => /^:?-{2,}:?$/.test(c));
+  if (isSep(cells[0])) start = 1;
+  if (!cells[start]) return "";
+  const head = cells[start];
+  const body = cells.slice(isSep(cells[start + 1]) ? start + 2 : start + 1);
+  let h = '<table class="md-table"><thead><tr>';
+  for (const c of head) h += "<th>" + inlineMd(c) + "</th>";
+  h += "</tr></thead><tbody>";
+  for (const row of body) {
+    h += "<tr>";
+    for (const c of row) h += "<td>" + inlineMd(c) + "</td>";
+    h += "</tr>";
+  }
+  h += "</tbody></table>";
+  return h;
+}
 
 let toastTimer;
 function toast(msg) {

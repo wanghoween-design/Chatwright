@@ -40,3 +40,15 @@ class DeepSeekProvider(WebChatProvider):
             ".ds-markdown, "
             "[class*='assistant']"
         )
+
+    async def _is_generating(self) -> bool:
+        """DeepSeek 生成时页面会出现「停止」按钮，存在即视为还在生成。"""
+        loc = self.page.locator("text=停止")
+        n = await loc.count()
+        for i in range(n):
+            try:
+                if await loc.nth(i).is_visible():
+                    return True
+            except Exception:
+                continue
+        return False

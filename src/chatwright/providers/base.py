@@ -74,6 +74,44 @@ class WebChatProvider(ABC):
         await self._wait_for_reply(timeout=timeout)  # 等待流式生成完成
         return await self._extract_last_reply()  # 抓取最后一条助手消息的文本
 
+    async def apply_options(self, options: dict) -> None:
+        """发送前应用可选设置（思考模式 / 模型切换 / 文件上传）。子类按需重写。"""
+        if options.get("file"):
+            await self._upload_file(str(options["file"]))
+        if options.get("thinking"):
+            await self._enable_thinking()
+        if options.get("model"):
+            await self._pick_model(str(options["model"]))
+
+    async def _enable_thinking(self) -> None:
+        """默认实现：尝试点击常见的「深度思考 / 思考」开关，找不到就忽略。"""
+        await self._click_text_if_visible(["深度思考", "思考", "DeepThink", "Thinking"])
+
+    async def _pick_model(self, model: str) -> None:
+        """模型切换高度平台相关，基类默认不实现（子类按需重写）。"""
+        pass
+
+    async def _upload_file(self, path: str) -> None:
+        """默认实现：找页面上的文件输入框并设置文件。"""
+        box = self.page.locator("input[type='file']").first
+        if await box.count() == 0:
+            raise RuntimeError("当前页面没有找到文件上传入口，该平台可能不支持上传")
+        await box.set_input_files(path)
+
+    async def _click_text_if_visible(self, texts: list[str], timeout: int = 3000) -> bool:
+        """点第一个可见的指定文字元素（用于思考开关、按钮等），找不到返回 False。"""
+        for text in texts:
+            loc = self.page.locator(f"text={text}")
+            n = await loc.count()
+            for i in range(n):
+                try:
+                    if await loc.nth(i).is_visible():
+                        await loc.nth(i).click(timeout=timeout)
+                        return True
+                except Exception:
+                    continue
+        return False
+
     @abstractmethod
     async def _type_and_submit(self, message: str) -> None:
         """【抽象方法 — 子类必须实现】把消息填入输入框并提交。
@@ -96,12 +134,14 @@ class WebChatProvider(ABC):
         """
         ...
 
-    async def _wait_for_reply(self, timeout: int = 120, stable: float = 1.5) -> None:
+    async def _wait_for_reply(self, timeout: int = 120, stable: float = 3.0) -> None:
         """等待 AI 流式回复生成完成。
 
         原理（防抖检测）：
           AI 回复是逐字流式输出的，每 0.5 秒轮询一次最后一条消息的文本。
-          当文本连续 stable 秒（默认 1.5 秒）没有变化，就认为生成已经结束。
+          当文本连续 stable 秒（默认 3 秒）没有变化，且页面没有生成中指示
+          （停止按钮 / 搜索提示），才认为生成已经结束。
+          更长的稳定期可以避免「联网搜索停顿」被误判为回答完毕而截断。
 
         为什么不用"检测停止按钮消失"等方案：
           - 不同平台的停止按钮样式不同，需要子类分别实现
@@ -113,15 +153,24 @@ class WebChatProvider(ABC):
           stable:  文本连续不变多少秒后判定为"生成完毕"
         """
         last = ""  # 上一次轮询时的文本内容
+        stable_since = 0.0  # 文本已连续不变的时间
         start = time.monotonic()  # 记录开始时间（单调时钟，不受系统时间调整影响）
         while time.monotonic() - start < timeout:  # 还没超时就继续轮询
             await self._check_interrupt()  # 子类可在此检测登录弹窗等异常，快速失败
             cur = (await self._extract_last_reply()).strip()  # 获取当前最新回复文本
-            if cur and cur == last:  # 文本非空且和上次一样 → 生成可能已结束
-                return  # 提前返回（正常完成路径）
-            last = cur  # 更新"上次文本"，继续下一轮等待
-            await self.page.wait_for_timeout(int(stable * 1000))  # 等 stable 秒后再检查
+            if cur and cur == last:
+                stable_since += 0.5
+                if stable_since >= stable and not await self._is_generating():
+                    return  # 连续 stable 秒无变化且没有生成中指示 → 完成
+            else:
+                stable_since = 0.0
+                last = cur  # 更新"上次文本"，继续下一轮等待
+            await self.page.wait_for_timeout(500)
         # 超时了也正常返回（不抛异常），此时 last 里保存着已抓取到的部分文本
+
+    async def _is_generating(self) -> bool:
+        """【可选钩子】页面是否仍在生成（停止按钮 / 加载指示）。默认认为已结束。"""
+        return False
 
     async def _check_interrupt(self) -> None:
         """【可选钩子】等待回复期间的检查点。

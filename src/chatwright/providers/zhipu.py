@@ -33,3 +33,16 @@ class ZhipuProvider(WebChatProvider):
     async def _bubbles(self) -> Locator:
         # 实测：AI 回复在 .markdown-body 里（.answer-content-wrap 是外层容器）
         return self.page.locator(".markdown-body, [class*='answer-content-wrap']")
+
+    async def _is_generating(self) -> bool:
+        """智谱有「联网搜索 / 思考」过程，期间文字会停顿，检测到生成指示就继续等。"""
+        for text in ("停止", "正在思考", "正在搜索", "搜索中"):
+            loc = self.page.locator(f"text={text}")
+            n = await loc.count()
+            for i in range(n):
+                try:
+                    if await loc.nth(i).is_visible():
+                        return True
+                except Exception:
+                    continue
+        return False

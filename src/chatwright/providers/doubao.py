@@ -25,7 +25,8 @@ class DoubaoProvider(WebChatProvider):
             print("[Chatwright] 豆包当前网络受区域限制，页面提示请先登录再使用豆包。")
 
     async def _type_and_submit(self, message: str) -> None:
-        box = self.page.locator("textarea, [contenteditable='true'], [role='textbox']").first
+        # 实测：页面里有两个 textarea，第一个是隐藏的，必须选可见的那个
+        box = self.page.locator("textarea:visible").first
         await box.wait_for(state="visible", timeout=15000)
         await box.click()
         await box.fill(message)

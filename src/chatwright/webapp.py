@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -58,6 +58,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "label": "Kimi",
         "desc": "月之暗面 · kimi.com",
         "state_file": "kimi_storage.json",
+        "live": True,  # Kimi 会话换浏览器实例即失效，必须用常驻可见窗口
         "cls": KimiProvider,
         "url": None,
         "login_url": KIMI_URL,
@@ -83,6 +84,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "label": "豆包",
         "desc": "字节 · www.doubao.com",
         "state_file": "doubao_storage.json",
+        "live": True,
         "cls": DoubaoProvider,
         "url": None,
         "login_url": DOUBAO_URL,
@@ -91,6 +93,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "label": "元宝",
         "desc": "腾讯 · yuanbao.tencent.com",
         "state_file": "yuanbao_storage.json",
+        "live": True,
         "cls": YuanbaoProvider,
         "url": None,
         "login_url": YUANBAO_URL,
@@ -118,6 +121,7 @@ class ChatRequest(BaseModel):
     message: str
     platforms: list[str]
     conv_id: str = ""  # 前端会话 id，用于区分对话（后端只透传）
+    options: dict[str, Any] = {}  # {thinking: bool, model: str, file: str}
 
 
 class LoginFinish(BaseModel):
@@ -147,6 +151,7 @@ class ChatJob:
     message: str
     platforms: list[str]
     conv_id: str = ""
+    options: dict[str, Any] = field(default_factory=dict)
     created: float = field(default_factory=time.monotonic)
     status: str = "running"  # running | done
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -186,6 +191,7 @@ async def platforms() -> list[dict[str, Any]]:
                 "needs_login": state_file is not None,
                 "logged_in": logged_in,
                 "guest_ok": bool(cfg.get("guest_ok")),
+                "models": cfg.get("models") or [],
             }
         )
     return out
@@ -202,11 +208,15 @@ async def _get_session(platform: str) -> PlatformSession:
         return sess
     cfg = PLATFORMS[platform]
     persistent = cfg["state_file"] is not None
-    bm = (
-        BrowserManager(headless=True, state_filename=cfg["state_file"], persistent=persistent)
-        if persistent
-        else BrowserManager(headless=True)
-    )
+    if persistent:
+        # live 平台用可见常驻窗口（Kimi 等），其余平台用无头窗口
+        bm = BrowserManager(
+            headless=not cfg.get("live"),
+            state_filename=cfg["state_file"],
+            persistent=True,
+        )
+    else:
+        bm = BrowserManager(headless=True)
     page = await bm.start()
     provider = cfg["cls"](page, base_url=cfg["url"]) if cfg["url"] else cfg["cls"](page)
     sess = PlatformSession(platform=platform, bm=bm, provider=provider)
@@ -246,7 +256,13 @@ async def create_chat(req: ChatRequest) -> dict[str, Any]:
     if not picks:
         raise HTTPException(status_code=400, detail="请至少选择一个平台")
 
-    job = ChatJob(id=uuid.uuid4().hex[:12], message=message, platforms=picks, conv_id=req.conv_id)
+    job = ChatJob(
+        id=uuid.uuid4().hex[:12],
+        message=message,
+        platforms=picks,
+        conv_id=req.conv_id,
+        options=req.options or {},
+    )
     job.task = asyncio.create_task(_run_job(job))
     JOBS[job.id] = job
     _prune_old_jobs()
@@ -277,7 +293,7 @@ async def _run_job(job: ChatJob) -> None:
             job.results[platform] = {"status": "running", "elapsed": 0.0}
             started = time.monotonic()
             try:
-                job.results[platform] = await _chat_one(platform, job.message)
+                job.results[platform] = await _chat_one(platform, job.message, job.options)
             except Exception as e:  # 单平台意外崩溃不能让整个任务挂死
                 job.results[platform] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
             job.results[platform]["elapsed"] = round(time.monotonic() - started, 1)
@@ -286,10 +302,12 @@ async def _run_job(job: ChatJob) -> None:
     job.status = "done"
 
 
-async def _chat_one(platform: str, message: str) -> dict[str, Any]:
+async def _chat_one(platform: str, message: str, options: dict[str, Any]) -> dict[str, Any]:
     """在平台的常驻会话里发消息（复用同一页面 → 保留对话上下文）。"""
     sess = await _get_session(platform)
     try:
+        if options:
+            await sess.provider.apply_options(options)
         reply = await sess.provider.send(message, timeout=120)
         url = sess.bm.page.url if sess.bm.page else ""
         return {"status": "done", "reply": reply, "url": url}
@@ -321,9 +339,66 @@ async def new_conversation(req: NewConversationRequest) -> dict[str, Any]:
         if platform not in PLATFORMS:
             continue
         async with _platform_lock(platform):
-            await _stop_session(platform)
+            if PLATFORMS[platform].get("live"):
+                # 常驻窗口不能关（登录会失效），导航回首页即为新会话
+                sess = SESSIONS.get(platform)
+                if sess is not None:
+                    target = PLATFORMS[platform].get("url") or PLATFORMS[platform]["login_url"]
+                    try:
+                        await sess.bm.page.goto(target, wait_until="domcontentloaded", timeout=30000)
+                        sess.provider._opened = True
+                    except Exception:
+                        pass
+            else:
+                await _stop_session(platform)
             done.append(platform)
     return {"ok": True, "platforms": done}
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
+    """接收前端上传的文件，保存到本地临时目录，供各平台上传使用。"""
+    upload_dir = STATE_DIR / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(file.filename or "file").name  # 去掉路径，只留文件名
+    path = upload_dir / f"{uuid.uuid4().hex[:10]}_{safe_name}"
+    with path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"ok": True, "path": str(path), "name": safe_name}
+
+
+@app.get("/api/debug/session/{platform}")
+async def debug_session(platform: str) -> dict[str, Any]:
+    """调试接口：返回某平台当前会话页面的关键 DOM（用于校准选择器）。"""
+    sess = SESSIONS.get(platform)
+    if sess is None or sess.bm.page is None:
+        return {"session": False}
+    page = sess.bm.page
+    try:
+        message_list = ""
+        ml = page.locator(".message-list")
+        if await ml.count():
+            message_list = await ml.first.evaluate("el => el.outerHTML")
+        body = await page.evaluate("() => (document.body.innerText||'').slice(-800)")
+        candidates = {}
+        for sel in ["[class*='markdown']", "[class*='message']", "[class*='assistant']"]:
+            try:
+                n = await page.locator(sel).count()
+                if n:
+                    candidates[sel] = await page.locator(sel).last.evaluate(
+                        "el => ({text: (el.innerText||'').slice(0,120), html: el.outerHTML.slice(0,300)})"
+                    )
+            except Exception:
+                continue
+        return {
+            "session": True,
+            "url": page.url,
+            "message_list_html": message_list[:4000],
+            "body_tail": body,
+            "candidates": candidates,
+        }
+    except Exception as e:
+        return {"session": True, "error": f"{type(e).__name__}: {e}"}
 
 
 @app.post("/api/conversations/switch")
@@ -355,18 +430,29 @@ async def start_login(platform: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="该平台无需登录")
 
     async with _platform_lock(platform):
-        if platform in LOGIN_SESSIONS:
+        if platform in LOGIN_SESSIONS and LOGIN_SESSIONS[platform].page is not None:
             return {"ok": True, "message": "登录窗口已经在打开状态"}
-        # 先关掉可能正在跑的 headless 会话，避免同一 profile 被两个浏览器占用
-        await _stop_session(platform)
-        # 用持久化 profile 打开可见浏览器：登录成功后状态自动保存在本地目录
-        bm = BrowserManager(headless=False, state_filename=cfg["state_file"], persistent=True)
-        await bm.start()
+        if cfg.get("live"):
+            # 常驻会话模式：登录窗口就是聊天窗口，登录后保持打开，会话不会失效
+            sess = await _get_session(platform)
+            bm = sess.bm
+        else:
+            # 先关掉可能正在跑的 headless 会话，避免同一 profile 被两个浏览器占用
+            await _stop_session(platform)
+            bm = BrowserManager(headless=False, state_filename=cfg["state_file"], persistent=True)
+            bm.channel = "chrome"  # 用真实 Chrome 降低登录验证码误判概率
+            try:
+                await bm.start()
+            except Exception:
+                bm.channel = None  # 没有安装 Chrome 时回退到自带浏览器
+                await bm.start()
         await bm.page.goto(cfg["login_url"], wait_until="domcontentloaded")
         if platform == "kimi":
             # Kimi 全新窗口不会自动弹登录框，帮用户把登录界面打开
             await _open_kimi_login_modal(bm.page)
         LOGIN_SESSIONS[platform] = bm
+        if cfg.get("live"):
+            SESSIONS[platform] = PlatformSession(platform=platform, bm=bm, provider=sess.provider)
     return {"ok": True, "message": "登录窗口已打开，请完成登录后点击确认"}
 
 
@@ -382,7 +468,8 @@ async def finish_login(platform: str, body: LoginFinish) -> dict[str, Any]:
         if not ok:
             return {"ok": False, "message": reason, "login_pending": True}
         LOGIN_SESSIONS.pop(platform, None)
-        await _safe_stop(bm)  # 持久化 profile：关闭即自动保存全部登录状态
+        if not PLATFORMS[platform].get("live"):
+            await _safe_stop(bm)  # 普通模式：关闭即自动保存全部登录状态
         _login_marker(platform).write_text("ok", encoding="utf-8")
         return {"ok": True, "message": f"{PLATFORMS[platform]['label']} 登录态已保存"}
     # 取消登录
@@ -434,6 +521,11 @@ async def _login_looks_complete(platform: str, bm: BrowserManager) -> tuple[bool
         modal = page.locator("[class*='hyc-login']")
         if await modal.count() > 0 and await modal.first.is_visible():
             return False, "元宝的登录窗口还在显示，登录似乎还没完成。请用微信/手机/QQ 完成登录后再点「已登录，保存」。"
+    elif platform == "doubao":
+        if "login" in page.url or "region-ban" in page.url:
+            return False, "浏览器还停留在豆包的登录/限制页，登录似乎还没完成。请完成登录后再点「已登录，保存」。"
+        if await _visible_text_button_exists(page, ("登录", "Log In")):
+            return False, "豆包页面右上角仍显示「登录」按钮，说明登录还没生效。请完成登录后再点「已登录，保存」。"
     elif platform == "deepseek":
         if "login" in page.url or "sign_in" in page.url:
             return False, "浏览器还停留在 DeepSeek 登录页，登录似乎还没完成。请完成登录后再点「已登录，保存」。"
@@ -441,6 +533,20 @@ async def _login_looks_complete(platform: str, bm: BrowserManager) -> tuple[bool
         if "login" in page.url:
             return False, "浏览器还停留在通义千问登录页，登录似乎还没完成。请完成登录后再点「已登录，保存」。"
     return True, ""
+
+
+async def _visible_text_button_exists(page, texts: tuple[str, ...]) -> bool:
+    """页面上是否存在可见的指定文字按钮。"""
+    for text in texts:
+        buttons = page.locator(f"button:has-text('{text}')")
+        n = await buttons.count()
+        for i in range(n):
+            try:
+                if await buttons.nth(i).is_visible():
+                    return True
+            except Exception:
+                continue
+    return False
 
 
 async def _safe_stop(bm: BrowserManager) -> None:

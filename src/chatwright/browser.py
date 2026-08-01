@@ -41,6 +41,8 @@ class BrowserManager:
         self.profile_dir: Path | None = None
         if persistent and state_filename:
             self.profile_dir = STATE_DIR / (Path(state_filename).stem + "_profile")
+        # 反自动化检测：默认用真实 Chrome 通道 + 隐藏自动化标记（部分网站登录验证码会检测）
+        self.channel: str | None = None
         self._pw = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -56,9 +58,15 @@ class BrowserManager:
             self.context = await self._pw.chromium.launch_persistent_context(
                 user_data_dir=str(self.profile_dir),
                 headless=self.headless,
+                channel=self.channel,
                 viewport={"width": 1280, "height": 900},
+                args=["--disable-blink-features=AutomationControlled"],
             )
             self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+            # 隐藏 navigator.webdriver，降低被网站识别为自动化工具的概率
+            await self.context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+            )
             # 首次使用 profile 时，把旧的 storage_state JSON 导入，免去重新登录
             if first_run:
                 await self._migrate_old_state()
