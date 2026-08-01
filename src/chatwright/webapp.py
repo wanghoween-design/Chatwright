@@ -87,6 +87,8 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "guest_ok": True,
         "live": True,          # 智谱有滑块验证，需常驻窗口人工过验证
         "headless_ok": False,  # 无头模式下智谱也保持可见窗口（验证墙需要人工）
+        "chrome_first": True,  # 风控墙对自带 Chromium 识别严格，优先真实 Chrome
+        "no_url_restore": True,  # 恢复旧对话 URL 会触发风控墙，一律从首页进入
         "cls": ZhipuProvider,
         "url": None,
         "login_url": ZHIPU_URL,
@@ -235,12 +237,21 @@ async def _get_session(platform: str) -> PlatformSession:
         )
     else:
         bm = BrowserManager(headless=True)
-    page = await bm.start()
+    if cfg.get("chrome_first"):
+        # 风控严格的平台优先用真实 Chrome（启动失败回退自带 Chromium）
+        bm.channel = "chrome"
+        try:
+            page = await bm.start()
+        except Exception:
+            bm.channel = None
+            page = await bm.start()
+    else:
+        page = await bm.start()
     provider = cfg["cls"](page, base_url=cfg["url"]) if cfg["url"] else cfg["cls"](page)
     sess = PlatformSession(platform=platform, bm=bm, provider=provider)
     SESSIONS[platform] = sess
     # 会话重建（浏览器被关闭等）后，跳回上次对话的 URL，保持同一对话上下文
-    if cfg.get("state_file"):
+    if cfg.get("state_file") and not cfg.get("no_url_restore"):
         last = _last_url_file(platform)
         if last.exists():
             url = last.read_text(encoding="utf-8").strip()

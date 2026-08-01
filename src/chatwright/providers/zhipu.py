@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import time
+
 from playwright.async_api import Locator, Page
 
 from .base import WebChatProvider
@@ -27,20 +29,23 @@ class ZhipuProvider(WebChatProvider):
         if "login" in self.page.url:
             print("[Chatwright] 智谱检测到登录页，请在浏览器中手动登录。")
         if await self._verification_blocked():
-            await self._restore_window()
-            raise RuntimeError(
-                "智谱要求滑块验证：请点击智谱卡片里的「去登录」，"
-                "在弹出窗口里拖动滑块完成验证，之后窗口会最小化保活。"
-            )
+            # 风控墙常为间歇性：先等待自动清除，持续存在才提示
+            if not await self._wait_verification_clear(30):
+                await self._restore_window()
+                raise RuntimeError(
+                    "智谱「访问验证」持续未通过（风控拦截）：已恢复窗口到前台，"
+                    "请尝试在窗口里完成验证；若仍失败，可能是当前网络被风控，请稍后再试。"
+                )
 
     async def _type_and_submit(self, message: str) -> None:
         # 先检查验证墙，避免白等 15 秒
         if await self._verification_blocked():
-            await self._restore_window()
-            raise RuntimeError(
-                "智谱出现「访问验证」滑块：已恢复智谱窗口到前台，"
-                "请在弹出的窗口里拖动滑块完成验证，完成后重新发送消息。"
-            )
+            if not await self._wait_verification_clear(30):
+                await self._restore_window()
+                raise RuntimeError(
+                    "智谱「访问验证」持续未通过（风控拦截）：已恢复窗口到前台，"
+                    "请尝试在窗口里完成验证；若仍失败，可能是当前网络被风控，请稍后再试。"
+                )
         # 页面可能混入隐藏的脚本 textarea（如 CF 风控代码），只选可见的
         box = self.page.locator("textarea:visible").first
         await box.wait_for(state="visible", timeout=15000)
@@ -88,11 +93,21 @@ class ZhipuProvider(WebChatProvider):
                     continue
         return False
 
+    async def _wait_verification_clear(self, seconds: float = 30.0) -> bool:
+        """等待验证墙自动消失（风控墙常为间歇性），返回是否已清除。"""
+        start = time.monotonic()
+        while time.monotonic() - start < seconds:
+            if not await self._verification_blocked():
+                return True
+            await self.page.wait_for_timeout(2000)
+        return False
+
     async def _check_interrupt(self) -> None:
-        """等待回复期间若出现滑块验证墙，快速提示用户去窗口里完成验证。"""
-        if await self._verification_blocked():
+        """等待回复期间若出现滑块验证墙：短时容忍（可能自动消失），持续才提示。"""
+        visible = await self._verification_blocked()
+        if self._modal_persisted(visible, timeout=10.0):
             await self._restore_window()
             raise RuntimeError(
-                "智谱出现「访问验证」滑块：已恢复智谱窗口到前台，"
-                "请在弹出的窗口里拖动滑块完成验证，完成后重新发送消息。"
+                "智谱「访问验证」持续未通过（风控拦截）：已恢复窗口到前台，"
+                "请尝试在窗口里完成验证；若仍失败，可能是当前网络被风控，请稍后再试。"
             )
