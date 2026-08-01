@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Chatwright · 多平台 AI 对比</title>
+<title>Chatwright · 多平台 AI 对话</title>
 <style>
   :root {
     --bg: #f5f7fb;
@@ -27,14 +27,71 @@
     line-height: 1.6;
   }
   header {
-    max-width: 1080px;
+    max-width: 1280px;
     margin: 0 auto;
-    padding: 32px 20px 8px;
+    padding: 24px 20px 6px;
   }
-  header h1 { margin: 0; font-size: 26px; letter-spacing: 0.3px; }
-  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
-  main { max-width: 1080px; margin: 0 auto; padding: 16px 20px 80px; }
+  header h1 { margin: 0; font-size: 24px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
 
+  .layout {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 14px 20px 80px;
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+  }
+
+  /* ---------------- 侧边栏 ---------------- */
+  .sidebar {
+    width: 250px;
+    flex: none;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px;
+    position: sticky;
+    top: 14px;
+    max-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+  }
+  .new-conv {
+    width: 100%;
+    border: 1px solid var(--primary);
+    background: var(--primary);
+    color: #fff;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  .new-conv:hover { opacity: 0.92; }
+  #conv-list {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .conv-item {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .conv-item:hover { background: #f0f4fb; }
+  .conv-item.active { background: #eff4ff; border-color: var(--primary); }
+  .conv-item .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-item .m { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .conv-empty { color: var(--muted); font-size: 12.5px; text-align: center; padding: 18px 0; }
+
+  /* ---------------- 主区域 ---------------- */
+  .content { flex: 1; min-width: 0; }
   .composer {
     background: var(--card);
     border: 1px solid var(--line);
@@ -44,7 +101,7 @@
   }
   textarea {
     width: 100%;
-    min-height: 88px;
+    min-height: 84px;
     resize: vertical;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -79,11 +136,7 @@
   }
   .pchip:hover { border-color: var(--primary); }
   .pchip.on { background: #eff4ff; border-color: var(--primary); }
-  .pchip input { display: none; }
-  .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--wait); flex: none;
-  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--wait); flex: none; }
   .pchip .dot.ok { background: var(--ok); }
   .pchip .dot.no { background: #f59e0b; }
   .pchip .lbl { font-weight: 600; }
@@ -105,17 +158,43 @@
     cursor: pointer; font-weight: 600;
   }
   button.primary:disabled { opacity: 0.55; cursor: not-allowed; }
-  button.ghost {
-    border: 1px solid var(--line); background: #fff; color: var(--muted);
-    border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+  .login-box {
+    margin-top: 10px; padding: 10px 12px;
+    border: 1px dashed var(--primary); border-radius: 8px;
+    background: #f6f9ff; font-size: 13px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   }
-  button.ghost:hover { color: var(--text); border-color: var(--muted); }
+  .login-box .msg { flex: 1; min-width: 200px; }
+  .login-box button {
+    border: 1px solid var(--primary); background: #fff; color: var(--primary);
+    border-radius: 6px; font-size: 12.5px; padding: 4px 12px; cursor: pointer;
+  }
+  .login-box button.done { background: var(--primary); color: #fff; }
+  .perr {
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    border-radius: 8px; padding: 10px 12px; font-size: 13px;
+    margin-top: 10px; display: flex; gap: 10px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .perr button {
+    border: 1px solid #d97706; background: #fff; color: #92400e;
+    border-radius: 6px; font-size: 12.5px; padding: 3px 12px; cursor: pointer;
+  }
+  .offline {
+    background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+    border-radius: var(--radius); padding: 14px 16px; font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .offline code {
+    background: #fee2e2; border-radius: 4px; padding: 1px 6px; font-size: 13px;
+  }
+  .offline a { color: var(--primary); }
 
   .round {
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    margin-top: 16px;
+    margin-top: 14px;
     padding: 14px 16px;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
   }
@@ -136,14 +215,11 @@
     border-radius: 10px;
     padding: 12px 14px;
     display: flex; flex-direction: column; gap: 8px;
-    min-height: 120px;
+    min-height: 110px;
   }
   .card .top { display: flex; align-items: center; gap: 8px; }
   .card .name { font-weight: 700; font-size: 14px; }
-  .badge {
-    font-size: 11px; padding: 2px 8px; border-radius: 999px;
-    font-weight: 600;
-  }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
   .badge.wait { background: #eef0f5; color: var(--wait); }
   .badge.run { background: #e3edff; color: var(--run); }
   .badge.ok  { background: #e5f6ec; color: var(--ok); }
@@ -167,19 +243,10 @@
     display: inline-block; flex: none;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
-  .login-box {
-    margin-top: 10px; padding: 10px 12px;
-    border: 1px dashed var(--primary); border-radius: 8px;
-    background: #f6f9ff; font-size: 13px;
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  .empty {
+    text-align: center; color: var(--muted); font-size: 14px;
+    padding: 40px 0;
   }
-  .login-box .msg { flex: 1; min-width: 200px; }
-  .login-box button {
-    border: 1px solid var(--primary); background: #fff; color: var(--primary);
-    border-radius: 6px; font-size: 12.5px; padding: 4px 12px; cursor: pointer;
-  }
-  .login-box button.done { background: var(--primary); color: #fff; }
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     background: #1f2430; color: #fff; padding: 10px 18px; border-radius: 8px;
@@ -187,61 +254,49 @@
     z-index: 10; max-width: 80vw;
   }
   .toast.show { opacity: 0.95; }
-  .empty {
-    text-align: center; color: var(--muted); font-size: 14px;
-    padding: 40px 0;
-  }
-  .offline {
-    background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
-    border-radius: var(--radius); padding: 14px 16px; font-size: 14px;
-    margin-bottom: 16px;
-  }
-  .offline code {
-    background: #fee2e2; border-radius: 4px; padding: 1px 6px;
-    font-size: 13px;
-  }
-  .offline a { color: var(--primary); }
-  .perr {
-    background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
-    border-radius: 8px; padding: 10px 12px; font-size: 13px;
-    margin-top: 10px; display: flex; gap: 10px; align-items: center;
-    flex-wrap: wrap;
-  }
-  .perr button {
-    border: 1px solid #d97706; background: #fff; color: #92400e;
-    border-radius: 6px; font-size: 12.5px; padding: 3px 12px; cursor: pointer;
+
+  @media (max-width: 860px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; position: static; max-height: 220px; }
   }
 </style>
 </head>
 <body>
 <header>
   <h1>🦐 Chatwright</h1>
-  <p>一条消息，同时发给多个网页 AI，结果并排对比 —— 无需任何 API Key。</p>
+  <p>一条消息同时发给多个网页 AI，默认在同一对话里继续，可新建 / 切回旧对话。</p>
 </header>
 
-<main>
-  <div id="offline-banner" class="offline" hidden>
-    ⚠️ 当前是直接打开的静态页面，连不上 Chatwright 后端，所以平台列表无法加载。
-    请先运行 <code>.venv\Scripts\python run_web.py</code>（或双击项目里的
-    <code>启动网站.bat</code>），然后访问 <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>。
-  </div>
-  <section class="composer">
-    <textarea id="input" placeholder="输入你想问的问题，比如：用一句话介绍你自己"></textarea>
-    <div class="row">
-      <div class="platforms" id="platforms"></div>
-      <div class="buttons">
-        <button class="ghost" id="clear">清空结果</button>
-        <button class="primary" id="send">发送到所选平台</button>
-      </div>
-    </div>
-    <div id="platform-error" class="perr" hidden>
-      平台列表加载失败：<span id="platform-error-msg"></span>
-      <button id="retry-platforms">重新加载</button>
-    </div>
-    <div id="loginbox"></div>
-  </section>
+<main class="layout">
+  <aside class="sidebar">
+    <button class="new-conv" id="new-conv">＋ 新建对话</button>
+    <div id="conv-list"></div>
+  </aside>
 
-  <section id="rounds"></section>
+  <div class="content">
+    <div id="offline-banner" class="offline" hidden>
+      ⚠️ 当前是直接打开的静态页面，连不上 Chatwright 后端，所以平台列表无法加载。
+      请先运行 <code>.venv\Scripts\python run_web.py</code>（或双击项目里的
+      <code>启动网站.bat</code>），然后访问 <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>。
+    </div>
+
+    <section class="composer">
+      <textarea id="input" placeholder="输入你想问的问题，比如：用一句话介绍你自己（Ctrl+Enter 发送）"></textarea>
+      <div class="row">
+        <div class="platforms" id="platforms"></div>
+        <div class="buttons">
+          <button class="primary" id="send">发送到所选平台</button>
+        </div>
+      </div>
+      <div id="platform-error" class="perr" hidden>
+        平台列表加载失败：<span id="platform-error-msg"></span>
+        <button id="retry-platforms">重新加载</button>
+      </div>
+      <div id="loginbox"></div>
+    </section>
+
+    <section id="rounds"></section>
+  </div>
 </main>
 
 <div class="toast" id="toast"></div>
@@ -249,10 +304,101 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const input = $("#input"), sendBtn = $("#send"), roundsBox = $("#rounds");
-let platformMeta = {};       // id -> {label, desc, needs_login, logged_in}
-let activeLogin = null;      // 正在登录的平台 id
-const timers = {};           // job_id -> 轮询定时器
-const sentAt = {};           // job_id -> 开始时间
+let platformMeta = {};        // id -> {label, desc, needs_login, logged_in}
+let activeLogin = null;       // 正在登录的平台 id
+const timers = {};            // job_id -> 轮询定时器
+const sentAt = {};            // job_id -> 开始时间
+const jobConv = {};           // job_id -> 所属对话 id
+let conversations = [];       // [{id, title, rounds: [], urls: {}}]
+let activeConvId = null;
+
+// ---------------------------------------------------------------- 对话管理
+function activeConv() {
+  return conversations.find((c) => c.id === activeConvId) || null;
+}
+
+function newConversation() {
+  const conv = { id: "c" + Date.now(), title: "新对话", rounds: [], urls: {} };
+  conversations.unshift(conv);
+  activeConvId = conv.id;
+  // 让所有平台从新会话开始（没有常驻会话的平台自动跳过）
+  fetch("/api/conversations/new", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ platforms: Object.keys(platformMeta) }),
+  }).catch(() => {});
+  renderSidebar();
+  renderRounds();
+  toast("已新建对话，接下来发送的消息会从新会话开始");
+}
+
+async function switchConversation(id) {
+  if (id === activeConvId) return;
+  const conv = conversations.find((c) => c.id === id);
+  if (!conv) return;
+  activeConvId = id;
+  // 把每个参与过该对话的平台页面导航回当时的对话 URL，恢复上下文
+  const urls = {};
+  Object.entries(conv.urls || {}).forEach(([p, u]) => { if (u) urls[p] = u; });
+  if (Object.keys(urls).length) {
+    fetch("/api/conversations/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls }),
+    }).catch(() => {});
+  }
+  renderSidebar();
+  renderRounds();
+}
+
+function renderSidebar() {
+  const box = $("#conv-list");
+  if (!conversations.length) {
+    box.innerHTML = `<div class="conv-empty">还没有对话</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  conversations.forEach((conv) => {
+    const item = document.createElement("div");
+    item.className = "conv-item" + (conv.id === activeConvId ? " active" : "");
+    const last = conv.rounds[0] || null;
+    const title = conv.title || "新对话";
+    const time = last ? new Date(last.sentAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+    item.innerHTML = `
+      <div class="t">${escapeHtml(title)}</div>
+      <div class="m">${conv.rounds.length} 轮${time ? " · " + time : ""}</div>`;
+    item.addEventListener("click", () => switchConversation(conv.id));
+    box.appendChild(item);
+  });
+}
+
+function renderRounds() {
+  const conv = activeConv();
+  roundsBox.innerHTML = "";
+  if (!conv || !conv.rounds.length) {
+    roundsBox.innerHTML = `<div class="empty">当前是「${conv ? escapeHtml(conv.title) : ""}」。输入问题，勾选平台，点“发送”——
+      默认在同一个对话里继续，模型会记得上下文；想重开一局就点左侧“新建对话”。</div>`;
+    return;
+  }
+  conv.rounds.forEach((round) => {
+    const div = document.createElement("div");
+    div.className = "round";
+    div.dataset.job = round.jobId;
+    const elapsed = Math.round((Date.now() - (round.sentAt || Date.now())) / 1000);
+    div.innerHTML = `
+      <div class="round-head">
+        <span class="q">${escapeHtml(round.message)}</span>
+        <span class="time">${elapsed}s</span>
+      </div>
+      <div class="grid"></div>`;
+    const grid = div.querySelector(".grid");
+    grid.innerHTML = round.platforms.map((id) => cardHtml(id, round.results[id])).join("");
+    grid.querySelectorAll("[data-copy]").forEach((btn) => {
+      btn.addEventListener("click", () => copyText(btn.dataset.copy, btn));
+    });
+    roundsBox.appendChild(div);
+  });
+}
 
 // ---------------------------------------------------------------- 平台选择
 async function loadPlatforms(tries = 3) {
@@ -296,12 +442,7 @@ function renderPlatforms() {
       ${authBtns}
     `;
     chip.addEventListener("click", (e) => {
-      if (e.target.matches("[data-login]")) {
-        e.preventDefault();
-        startLogin(p.id);
-        return;
-      }
-      if (e.target.matches("[data-relogin]")) {
+      if (e.target.matches("[data-login], [data-relogin]")) {
         e.preventDefault();
         startLogin(p.id);
         return;
@@ -349,7 +490,6 @@ async function finishLogin(save) {
       body: JSON.stringify({ save }),
     }).then((x) => x.json());
     if (r.login_pending) {
-      // 登录还没完成：保留登录框，让用户回到浏览器窗口继续登录
       toast(r.message || "登录尚未完成，请先在浏览器窗口里完成登录");
       return;
     }
@@ -378,19 +518,25 @@ async function logoutPlatform(id) {
 async function sendMessage() {
   const message = input.value.trim();
   const picks = selectedPlatforms();
+  const conv = activeConv();
   if (!message) { toast("先输入一条消息"); return; }
   if (!picks.length) { toast("至少勾选一个平台"); return; }
+  if (!conv) { toast("请先新建对话"); return; }
 
   sendBtn.disabled = true;
   try {
     const { job_id } = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, platforms: picks }),
+      body: JSON.stringify({ message, platforms: picks, conv_id: conv.id }),
     }).then((r) => r.json());
 
+    if (conv.title === "新对话") conv.title = message.slice(0, 24);
+    conv.rounds.unshift({ jobId: job_id, message, platforms: picks, results: {}, sentAt: Date.now() });
+    jobConv[job_id] = conv.id;
     sentAt[job_id] = Date.now();
-    addRound(job_id, message, picks);
+    renderSidebar();
+    renderRounds();
     timers[job_id] = setInterval(() => pollJob(job_id), 1200);
     pollJob(job_id);
   } catch (e) {
@@ -405,44 +551,22 @@ async function pollJob(jobId) {
   try {
     job = await fetch(`/api/jobs/${jobId}`).then((r) => r.json());
   } catch { return; }
-  updateRound(jobId, job);
-  const results = Object.values(job.results || {});
-  const finished = results.length > 0 && results.every((r) => r.status !== "running");
-  if (finished) {
+  const conv = conversations.find((c) => c.id === jobConv[jobId]);
+  if (!conv) return;
+  const round = conv.rounds.find((r) => r.jobId === jobId);
+  if (!round) return;
+  round.results = job.results || {};
+  // 记录每个平台当时的对话 URL（用于以后切回该对话）
+  Object.entries(round.results).forEach(([p, r]) => {
+    if (r && r.status === "done" && r.url) conv.urls[p] = r.url;
+  });
+  renderRounds();
+  renderSidebar();
+  const results = Object.values(round.results);
+  if (results.length > 0 && results.every((r) => r.status !== "running")) {
     clearInterval(timers[jobId]);
     delete timers[jobId];
   }
-}
-
-function addRound(jobId, message, picks) {
-  const div = document.createElement("div");
-  div.className = "round";
-  div.dataset.job = jobId;
-  div.innerHTML = `
-    <div class="round-head">
-      <span class="q"></span>
-      <span class="time">刚刚</span>
-    </div>
-    <div class="grid"></div>`;
-  roundsBox.prepend(div);
-  updateRound(jobId, { message, results: {} });
-}
-
-function updateRound(jobId, job) {
-  const div = roundsBox.querySelector(`.round[data-job="${jobId}"]`);
-  if (!div) return;
-  const meta = platformMeta;
-  const elapsed = Math.round((Date.now() - (sentAt[jobId] || Date.now())) / 1000);
-  div.querySelector(".q").textContent = job.message || "";
-  div.querySelector(".time").textContent = `${elapsed}s`;
-
-  const grid = div.querySelector(".grid");
-  const picks = Object.keys(job.results || {}).length ? Object.keys(job.results) : null;
-  const showIds = picks || Object.keys(meta);
-  grid.innerHTML = showIds.map((id) => cardHtml(id, (job.results || {})[id])).join("");
-  grid.querySelectorAll("[data-copy]").forEach((btn) => {
-    btn.addEventListener("click", () => copyText(btn.dataset.copy, btn));
-  });
 }
 
 function cardHtml(id, res) {
@@ -456,7 +580,7 @@ function cardHtml(id, res) {
     error: ["err", "失败"],
   }[state] || ["wait", "等待中"];
 
-  let body, foot = `<span class="elapsed">${res && res.elapsed != null ? res.elapsed + "s" : ""}</span>`;
+  let body, foot = `<span class="elapsed"></span>`;
   if (state === "done") {
     body = `<div class="body">${escapeHtml(res.reply || "(空回复)")}</div>`;
     foot = `<span class="elapsed">${res.elapsed}s</span>
@@ -490,7 +614,7 @@ function copyText(text, btn) {
 }
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({
+  return String(s || "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
@@ -502,19 +626,14 @@ function toast(msg) {
   el.textContent = msg;
   el.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
 }
 
 // ---------------------------------------------------------------- 事件绑定
 $("#send").addEventListener("click", sendMessage);
+$("#new-conv").addEventListener("click", newConversation);
 input.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendMessage();
-});
-$("#clear").addEventListener("click", () => {
-  Object.values(timers).forEach(clearInterval);
-  for (const k of Object.keys(timers)) delete timers[k];
-  roundsBox.innerHTML = "";
-  maybeEmptyHint();
 });
 $("#loginbox").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-finish]");
@@ -522,19 +641,14 @@ $("#loginbox").addEventListener("click", (e) => {
 });
 $("#retry-platforms").addEventListener("click", () => loadPlatforms(3));
 
-// 如果是直接双击 HTML 文件打开的（file://），说明没有连上后端，
-// 此时隐藏输入区并提示正确启动方式；只有通过服务器访问才加载平台列表
+// ---------------------------------------------------------------- 初始化
 if (location.protocol === "file:") {
   $("#offline-banner").hidden = false;
   document.querySelector(".composer").style.display = "none";
+  document.querySelector(".sidebar").style.display = "none";
 } else {
-  maybeEmptyHint();
+  newConversation(); // 默认先建一个对话
   loadPlatforms();
-}
-function maybeEmptyHint() {
-  if (!roundsBox.children.length) {
-    roundsBox.innerHTML = `<div class="empty">输入一个问题，勾选平台，点“发送”——Chatwright 会用浏览器替你分别打开各网页 AI，并排返回结果。</div>`;
-  }
 }
 </script>
 </body>

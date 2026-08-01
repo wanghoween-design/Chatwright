@@ -9,8 +9,8 @@ __pycache__/
 # Playwright 浏览器二进制（太大，用 pip install playwright + playwright install chromium 重建）
 .pw-browsers/
 
-# 登录态（含个人 cookie，不上传）
-state/*.json
+# 登录态与浏览器配置目录（含个人 cookie，不上传）
+state/
 
 # 调试截图
 tests/*.png

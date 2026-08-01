@@ -5,15 +5,15 @@
     然后浏览器打开 http://127.0.0.1:8765
 
 功能：
-  - 多平台聊天：POST /api/chat 创建一个任务，后台并发跑各平台浏览器自动化
-  - 进度轮询：GET /api/jobs/{job_id} 返回每个平台的状态（等待中/对话中/完成/失败）
-  - 登录管理：POST /api/login/{platform} 弹出可见浏览器供手动登录，
-    POST /api/login/{platform}/finish 保存登录态，下次自动复用
+  - 多平台聊天：POST /api/chat 创建任务，后台并发跑各平台浏览器自动化
+  - 对话管理：默认在同一对话里继续（保留上下文），支持新建对话、切换回旧对话
+  - 登录管理：去登录 / 重新登录（全新会话）/ 注销，持久化浏览器配置目录
 """
 
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -41,7 +41,7 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 STATIC_DIR = WEB_DIR / "static"
 
 # 每个平台：标签、描述、登录态文件名（None = 无需登录）、Provider 类、
-# 特珠 base_url（None = 用 Provider 自己的默认 URL）、登录跳转 URL
+# 特殊 base_url（None = 用 Provider 自己的默认 URL）、登录跳转 URL
 PLATFORMS: dict[str, dict[str, Any]] = {
     "deepseek": {
         "label": "DeepSeek",
@@ -88,10 +88,28 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 class ChatRequest(BaseModel):
     message: str
     platforms: list[str]
+    conv_id: str = ""  # 前端会话 id，用于区分对话（后端只透传）
 
 
 class LoginFinish(BaseModel):
     save: bool = True
+
+
+class SwitchRequest(BaseModel):
+    urls: dict[str, str] = {}  # {platform: 该对话在此平台的页面 URL}
+
+
+class NewConversationRequest(BaseModel):
+    platforms: list[str] = []
+
+
+@dataclass
+class PlatformSession:
+    """一个平台常驻的浏览器会话：页面保持打开，对话上下文自然延续。"""
+
+    platform: str
+    bm: BrowserManager
+    provider: Any
 
 
 @dataclass
@@ -99,6 +117,7 @@ class ChatJob:
     id: str
     message: str
     platforms: list[str]
+    conv_id: str = ""
     created: float = field(default_factory=time.monotonic)
     status: str = "running"  # running | done
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -106,12 +125,13 @@ class ChatJob:
 
 
 JOBS: dict[str, ChatJob] = {}
+SESSIONS: dict[str, PlatformSession] = {}
 LOGIN_SESSIONS: dict[str, BrowserManager] = {}
 PLATFORM_LOCKS: dict[str, asyncio.Lock] = {}
 
 
 # ---------------------------------------------------------------------------
-# 页面
+# 页面与平台列表
 # ---------------------------------------------------------------------------
 
 @app.get("/")
@@ -119,25 +139,64 @@ async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-# ---------------------------------------------------------------------------
-# 平台列表（含登录状态）
-# ---------------------------------------------------------------------------
-
 @app.get("/api/platforms")
 async def platforms() -> list[dict[str, Any]]:
     out = []
     for key, cfg in PLATFORMS.items():
         state_file = cfg["state_file"]
+        # 持久化模式：profile 目录存在即视为已登录
+        logged_in = False
+        if state_file is not None:
+            profile = STATE_DIR / (Path(state_file).stem + "_profile")
+            # profile 或旧登录文件存在都算已登录（旧文件会在首次使用时迁移进 profile）
+            logged_in = profile.exists() or (STATE_DIR / state_file).exists()
         out.append(
             {
                 "id": key,
                 "label": cfg["label"],
                 "desc": cfg["desc"],
                 "needs_login": state_file is not None,
-                "logged_in": state_file is not None and (STATE_DIR / state_file).exists(),
+                "logged_in": logged_in,
             }
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# 会话管理
+# ---------------------------------------------------------------------------
+
+async def _get_session(platform: str) -> PlatformSession:
+    """取平台的常驻浏览器会话；没有则创建（首次使用时）。"""
+    sess = SESSIONS.get(platform)
+    if sess is not None:
+        return sess
+    cfg = PLATFORMS[platform]
+    persistent = cfg["state_file"] is not None
+    bm = (
+        BrowserManager(headless=True, state_filename=cfg["state_file"], persistent=persistent)
+        if persistent
+        else BrowserManager(headless=True)
+    )
+    page = await bm.start()
+    provider = cfg["cls"](page, base_url=cfg["url"]) if cfg["url"] else cfg["cls"](page)
+    sess = PlatformSession(platform=platform, bm=bm, provider=provider)
+    SESSIONS[platform] = sess
+    return sess
+
+
+async def _stop_session(platform: str) -> None:
+    """停止并移除某平台的常驻会话（新建对话 / 登录 / 注销时用）。"""
+    sess = SESSIONS.pop(platform, None)
+    if sess is not None:
+        try:
+            await sess.bm.stop()
+        except Exception:
+            pass
+
+
+def _platform_lock(platform: str) -> asyncio.Lock:
+    return PLATFORM_LOCKS.setdefault(platform, asyncio.Lock())
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +212,7 @@ async def create_chat(req: ChatRequest) -> dict[str, Any]:
     if not picks:
         raise HTTPException(status_code=400, detail="请至少选择一个平台")
 
-    job = ChatJob(id=uuid.uuid4().hex[:12], message=message, platforms=picks)
+    job = ChatJob(id=uuid.uuid4().hex[:12], message=message, platforms=picks, conv_id=req.conv_id)
     job.task = asyncio.create_task(_run_job(job))
     JOBS[job.id] = job
     _prune_old_jobs()
@@ -168,6 +227,7 @@ async def get_job(job_id: str) -> dict[str, Any]:
     return {
         "id": job.id,
         "message": job.message,
+        "conv_id": job.conv_id,
         "status": job.status,
         "elapsed": round(time.monotonic() - job.created, 1),
         "results": job.results,
@@ -178,8 +238,7 @@ async def _run_job(job: ChatJob) -> None:
     """并发把消息发给每个平台，逐个更新进度。"""
 
     async def one(platform: str) -> None:
-        # 每个平台一把锁，避免多个任务同时操作同一份登录态
-        lock = PLATFORM_LOCKS.setdefault(platform, asyncio.Lock())
+        lock = _platform_lock(platform)
         async with lock:
             job.results[platform] = {"status": "running", "elapsed": 0.0}
             started = time.monotonic()
@@ -194,22 +253,14 @@ async def _run_job(job: ChatJob) -> None:
 
 
 async def _chat_one(platform: str, message: str) -> dict[str, Any]:
-    """在独立浏览器中跑一个平台，返回 {status: done|error, reply?, error?}。"""
-    cfg = PLATFORMS[platform]
-    bm = (
-        BrowserManager(headless=True, state_filename=cfg["state_file"])
-        if cfg["state_file"]
-        else BrowserManager(headless=True)
-    )
+    """在平台的常驻会话里发消息（复用同一页面 → 保留对话上下文）。"""
+    sess = await _get_session(platform)
     try:
-        page = await bm.start()
-        provider = cfg["cls"](page, base_url=cfg["url"]) if cfg["url"] else cfg["cls"](page)
-        reply = await provider.send(message, timeout=120)
-        return {"status": "done", "reply": reply}
-    except Exception as e:  # 单平台失败不影响其他平台
+        reply = await sess.provider.send(message, timeout=120)
+        url = sess.bm.page.url if sess.bm.page else ""
+        return {"status": "done", "reply": reply, "url": url}
+    except Exception as e:
         return {"status": "error", "error": f"{type(e).__name__}: {e}"}
-    finally:
-        await bm.stop()
 
 
 def _prune_old_jobs(keep: int = 50) -> None:
@@ -225,7 +276,42 @@ def _prune_old_jobs(keep: int = 50) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 登录流程（弹出可见浏览器，手动登录后保存登录态）
+# 对话管理（新建 / 切换）
+# ---------------------------------------------------------------------------
+
+@app.post("/api/conversations/new")
+async def new_conversation(req: NewConversationRequest) -> dict[str, Any]:
+    """新建对话：让指定平台从新会话开始（旧对话仍可通过 URL 切回）。"""
+    done = []
+    for platform in req.platforms:
+        if platform not in PLATFORMS:
+            continue
+        async with _platform_lock(platform):
+            await _stop_session(platform)
+            done.append(platform)
+    return {"ok": True, "platforms": done}
+
+
+@app.post("/api/conversations/switch")
+async def switch_conversation(req: SwitchRequest) -> dict[str, Any]:
+    """切回旧对话：把各平台页面导航到该对话保存的 URL，上下文随之恢复。"""
+    results: dict[str, str] = {}
+    for platform, url in (req.urls or {}).items():
+        if platform not in PLATFORMS or not url:
+            continue
+        async with _platform_lock(platform):
+            try:
+                sess = await _get_session(platform)
+                await sess.bm.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                sess.provider._opened = True  # 之后发送消息时不再跳回首页
+                results[platform] = "ok"
+            except Exception as e:
+                results[platform] = f"error: {type(e).__name__}: {e}"
+    return {"ok": True, "results": results}
+
+
+# ---------------------------------------------------------------------------
+# 登录流程（弹出可见浏览器，手动登录后保存）
 # ---------------------------------------------------------------------------
 
 @app.post("/api/login/{platform}")
@@ -233,15 +319,17 @@ async def start_login(platform: str) -> dict[str, Any]:
     cfg = PLATFORMS.get(platform)
     if cfg is None or cfg["state_file"] is None:
         raise HTTPException(status_code=400, detail="该平台无需登录")
-    if platform in LOGIN_SESSIONS:
-        return {"ok": True, "message": "登录窗口已经在打开状态"}
 
-    # 登录/重新登录统一用全新浏览器会话（不加载旧登录态），
-    # 这样页面会稳定显示登录入口，登录成功后覆盖保存即可
-    bm = BrowserManager(headless=False, state_filename=cfg["state_file"], load_storage=False)
-    await bm.start()
-    await bm.page.goto(cfg["login_url"], wait_until="domcontentloaded")
-    LOGIN_SESSIONS[platform] = bm
+    async with _platform_lock(platform):
+        if platform in LOGIN_SESSIONS:
+            return {"ok": True, "message": "登录窗口已经在打开状态"}
+        # 先关掉可能正在跑的 headless 会话，避免同一 profile 被两个浏览器占用
+        await _stop_session(platform)
+        # 用持久化 profile 打开可见浏览器：登录成功后状态自动保存在本地目录
+        bm = BrowserManager(headless=False, state_filename=cfg["state_file"], persistent=True)
+        await bm.start()
+        await bm.page.goto(cfg["login_url"], wait_until="domcontentloaded")
+        LOGIN_SESSIONS[platform] = bm
     return {"ok": True, "message": "登录窗口已打开，请完成登录后点击确认"}
 
 
@@ -255,10 +343,9 @@ async def finish_login(platform: str, body: LoginFinish) -> dict[str, Any]:
         ok, reason = await _login_looks_complete(platform, bm)
         if not ok:
             return {"ok": False, "message": reason, "login_pending": True}
-        await bm.save_state()
         LOGIN_SESSIONS.pop(platform, None)
-        await _safe_stop(bm)
-        return {"ok": True, "message": f"登录态已保存（{bm.state_path.name}）"}
+        await _safe_stop(bm)  # 持久化 profile：关闭即自动保存全部登录状态
+        return {"ok": True, "message": f"{PLATFORMS[platform]['label']} 登录态已保存"}
     # 取消登录
     LOGIN_SESSIONS.pop(platform, None)
     await _safe_stop(bm)
@@ -292,24 +379,35 @@ async def _safe_stop(bm: BrowserManager) -> None:
         pass  # 用户可能已经手动关掉了浏览器窗口
 
 
+# ---------------------------------------------------------------------------
+# 注销登录
+# ---------------------------------------------------------------------------
+
 @app.post("/api/logout/{platform}")
 async def logout_platform(platform: str) -> dict[str, Any]:
-    """注销登录：删除该平台保存在本地的登录态（cookie 等）。"""
+    """注销登录：删除该平台保存在本地的持久化 profile。"""
     cfg = PLATFORMS.get(platform)
     if cfg is None or cfg["state_file"] is None:
         raise HTTPException(status_code=400, detail="该平台无需登录")
 
-    # 若有正在进行的登录流程，一并关闭，避免残留浏览器窗口
-    bm = LOGIN_SESSIONS.pop(platform, None)
-    if bm is not None:
-        try:
-            await bm.stop()
-        except Exception:
-            pass
+    async with _platform_lock(platform):
+        # 关闭进行中的登录流程与常驻会话，避免文件被占用
+        login_bm = LOGIN_SESSIONS.pop(platform, None)
+        if login_bm is not None:
+            await _safe_stop(login_bm)
+        await _stop_session(platform)
 
-    state_file = STATE_DIR / cfg["state_file"]
-    if state_file.exists():
-        state_file.unlink()
+        removed = False
+        profile = STATE_DIR / (Path(cfg["state_file"]).stem + "_profile")
+        if profile.exists():
+            shutil.rmtree(profile, ignore_errors=True)
+            removed = True
+        state_file = STATE_DIR / cfg["state_file"]
+        if state_file.exists():
+            state_file.unlink()
+            removed = True
+
+    if removed:
         return {"ok": True, "message": f"已注销 {cfg['label']} 的本地登录态"}
     return {"ok": True, "message": f"{cfg['label']} 没有可注销的本地登录态"}
 
