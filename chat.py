@@ -27,6 +27,9 @@ from chatwright.providers.deepseek import DeepSeekProvider
 from chatwright.providers.kimi import KimiProvider
 from chatwright.providers.mock import MockProvider
 from chatwright.providers.qwen import QwenProvider
+from chatwright.providers.doubao import DoubaoProvider
+from chatwright.providers.yuanbao import YuanbaoProvider
+from chatwright.providers.zhipu import ZhipuProvider
 
 MOCK_HTML = Path(__file__).resolve().parent / "tests" / "mock_chat.html"
 
@@ -36,6 +39,9 @@ PLATFORMS = {
     "kimi":     (KimiProvider,     "kimi_storage.json",     "Kimi 网页版",     None),
     "qwen":     (QwenProvider,     "qwen_storage.json",     "通义千问 网页版", None),
     "mock":     (MockProvider,     None,                    "本地演示（无登录）", "file://" + str(MOCK_HTML)),
+    "doubao":   (DoubaoProvider,   "doubao_storage.json",   "豆包 网页版",       None),
+    "yuanbao":  (YuanbaoProvider,  "yuanbao_storage.json",  "元宝 网页版",       None),
+    "zhipu":    (ZhipuProvider,    "zhipu_storage.json",    "智谱 网页版",       None),
 }
 
 

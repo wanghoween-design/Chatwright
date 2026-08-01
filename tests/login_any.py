@@ -19,11 +19,17 @@ from chatwright.browser import BrowserManager
 from chatwright.providers.deepseek import DEFAULT_URL as DEEPSEEK_URL
 from chatwright.providers.kimi import DEFAULT_URL as KIMI_URL
 from chatwright.providers.qwen import DEFAULT_URL as QWEN_URL
+from chatwright.providers.doubao import DEFAULT_URL as DOUBAO_URL
+from chatwright.providers.yuanbao import DEFAULT_URL as YUANBAO_URL
+from chatwright.providers.zhipu import DEFAULT_URL as ZHIPU_URL
 
 LOGIN_TARGETS = {
     "deepseek": ("deepseek_storage.json", DEEPSEEK_URL),
     "kimi":     ("kimi_storage.json",     KIMI_URL),
     "qwen":     ("qwen_storage.json",     QWEN_URL),
+    "doubao":   ("doubao_storage.json",   DOUBAO_URL),
+    "yuanbao":  ("yuanbao_storage.json",  YUANBAO_URL),
+    "zhipu":    ("zhipu_storage.json",    ZHIPU_URL),
 }
 
 

@@ -435,10 +435,11 @@ function renderPlatforms() {
       ? `<button class="login" data-relogin="${p.id}">重登</button>
          <button class="logout" data-logout="${p.id}">注销</button>`
       : `<button class="login" data-login="${p.id}">去登录</button>`);
+    const note = !p.needs_login ? "免登录" : (p.logged_in ? "已登录" : (p.guest_ok ? "游客可用" : "未登录"));
     chip.innerHTML = `
       <span class="dot ${dotCls}"></span>
       <span class="lbl">${p.label}</span>
-      <span class="note">${p.needs_login ? (p.logged_in ? "已登录" : "未登录") : "免登录"}</span>
+      <span class="note">${note}</span>
       ${authBtns}
     `;
     chip.addEventListener("click", (e) => {

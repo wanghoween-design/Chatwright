@@ -30,6 +30,9 @@ from chatwright.providers.deepseek import DeepSeekProvider, DEFAULT_URL as DEEPS
 from chatwright.providers.kimi import KimiProvider, DEFAULT_URL as KIMI_URL
 from chatwright.providers.qwen import QwenProvider, DEFAULT_URL as QWEN_URL
 from chatwright.providers.mock import MockProvider
+from chatwright.providers.doubao import DoubaoProvider, DEFAULT_URL as DOUBAO_URL
+from chatwright.providers.yuanbao import YuanbaoProvider, DEFAULT_URL as YUANBAO_URL
+from chatwright.providers.zhipu import ZhipuProvider, DEFAULT_URL as ZHIPU_URL
 
 # ---------------------------------------------------------------------------
 # 平台注册表
@@ -63,6 +66,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "label": "通义千问",
         "desc": "阿里 · www.qianwen.com（游客可用）",
         "state_file": "qwen_storage.json",
+        "guest_ok": True,
         "cls": QwenProvider,
         "url": None,
         "login_url": QWEN_URL,
@@ -74,6 +78,31 @@ PLATFORMS: dict[str, dict[str, Any]] = {
         "cls": MockProvider,
         "url": "file://" + str(MOCK_HTML),
         "login_url": None,
+    },
+    "doubao": {
+        "label": "豆包",
+        "desc": "字节 · www.doubao.com",
+        "state_file": "doubao_storage.json",
+        "cls": DoubaoProvider,
+        "url": None,
+        "login_url": DOUBAO_URL,
+    },
+    "yuanbao": {
+        "label": "元宝",
+        "desc": "腾讯 · yuanbao.tencent.com",
+        "state_file": "yuanbao_storage.json",
+        "cls": YuanbaoProvider,
+        "url": None,
+        "login_url": YUANBAO_URL,
+    },
+    "zhipu": {
+        "label": "智谱",
+        "desc": "智谱 · chatglm.cn（游客可用）",
+        "state_file": "zhipu_storage.json",
+        "guest_ok": True,
+        "cls": ZhipuProvider,
+        "url": None,
+        "login_url": ZHIPU_URL,
     },
 }
 
@@ -147,9 +176,8 @@ async def platforms() -> list[dict[str, Any]]:
         # 持久化模式：profile 目录存在即视为已登录
         logged_in = False
         if state_file is not None:
-            profile = STATE_DIR / (Path(state_file).stem + "_profile")
-            # profile 或旧登录文件存在都算已登录（旧文件会在首次使用时迁移进 profile）
-            logged_in = profile.exists() or (STATE_DIR / state_file).exists()
+            # 登录成功标记（新流程验证通过后写入）或旧登录 JSON（会迁移进 profile）
+            logged_in = _login_marker(key).exists() or (STATE_DIR / state_file).exists()
         out.append(
             {
                 "id": key,
@@ -157,6 +185,7 @@ async def platforms() -> list[dict[str, Any]]:
                 "desc": cfg["desc"],
                 "needs_login": state_file is not None,
                 "logged_in": logged_in,
+                "guest_ok": bool(cfg.get("guest_ok")),
             }
         )
     return out
@@ -197,6 +226,11 @@ async def _stop_session(platform: str) -> None:
 
 def _platform_lock(platform: str) -> asyncio.Lock:
     return PLATFORM_LOCKS.setdefault(platform, asyncio.Lock())
+
+
+def _login_marker(platform: str) -> Path:
+    """登录成功标记文件：只有通过登录流程验证后才会写入。"""
+    return STATE_DIR / f"{platform}.login"
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +363,9 @@ async def start_login(platform: str) -> dict[str, Any]:
         bm = BrowserManager(headless=False, state_filename=cfg["state_file"], persistent=True)
         await bm.start()
         await bm.page.goto(cfg["login_url"], wait_until="domcontentloaded")
+        if platform == "kimi":
+            # Kimi 全新窗口不会自动弹登录框，帮用户把登录界面打开
+            await _open_kimi_login_modal(bm.page)
         LOGIN_SESSIONS[platform] = bm
     return {"ok": True, "message": "登录窗口已打开，请完成登录后点击确认"}
 
@@ -340,16 +377,37 @@ async def finish_login(platform: str, body: LoginFinish) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="没有进行中的登录流程")
     if body.save:
         # 保存前先确认登录真的完成了，避免把"没登录成功"的状态存下来
+        await bm.page.wait_for_timeout(3000)  # 等页面稳定，避免过早误判
         ok, reason = await _login_looks_complete(platform, bm)
         if not ok:
             return {"ok": False, "message": reason, "login_pending": True}
         LOGIN_SESSIONS.pop(platform, None)
         await _safe_stop(bm)  # 持久化 profile：关闭即自动保存全部登录状态
+        _login_marker(platform).write_text("ok", encoding="utf-8")
         return {"ok": True, "message": f"{PLATFORMS[platform]['label']} 登录态已保存"}
     # 取消登录
     LOGIN_SESSIONS.pop(platform, None)
     await _safe_stop(bm)
     return {"ok": True, "message": "已取消登录"}
+
+
+async def _open_kimi_login_modal(page) -> None:
+    """Kimi 新窗口打开后不会自动显示登录框，主动点一下「Log In / 登录」。"""
+    await page.wait_for_timeout(3000)
+    modal = page.locator("[class*='login-modal']")
+    if await modal.count() > 0 and await modal.first.is_visible():
+        return  # 登录框已经在显示
+    # 找一个可见的登录按钮（英文/中文界面都试）
+    for text in ("Log In", "登录"):
+        buttons = page.locator(f"button:has-text('{text}')")
+        for i in range(await buttons.count()):
+            try:
+                if await buttons.nth(i).is_visible():
+                    await buttons.nth(i).click(timeout=5000)
+                    await page.wait_for_timeout(2000)
+                    return
+            except Exception:
+                continue
 
 
 async def _login_looks_complete(platform: str, bm: BrowserManager) -> tuple[bool, str]:
@@ -363,6 +421,19 @@ async def _login_looks_complete(platform: str, bm: BrowserManager) -> tuple[bool
         )
         if await modal.count() > 0 and await modal.first.is_visible():
             return False, "浏览器里的 Kimi 登录框还在显示，登录似乎还没完成。请完成登录后再点「已登录，保存」。"
+        # 第二重校验：页面上不应再有可见的「Log In / 登录」按钮
+        for text in ("Log In", "登录"):
+            buttons = page.locator(f"button:has-text('{text}')")
+            for i in range(await buttons.count()):
+                try:
+                    if await buttons.nth(i).is_visible():
+                        return False, "Kimi 页面右上角仍显示「登录」按钮，说明登录还没生效。请完成登录后再点「已登录，保存」。"
+                except Exception:
+                    continue
+    elif platform == "yuanbao":
+        modal = page.locator("[class*='hyc-login']")
+        if await modal.count() > 0 and await modal.first.is_visible():
+            return False, "元宝的登录窗口还在显示，登录似乎还没完成。请用微信/手机/QQ 完成登录后再点「已登录，保存」。"
     elif platform == "deepseek":
         if "login" in page.url or "sign_in" in page.url:
             return False, "浏览器还停留在 DeepSeek 登录页，登录似乎还没完成。请完成登录后再点「已登录，保存」。"
@@ -405,6 +476,10 @@ async def logout_platform(platform: str) -> dict[str, Any]:
         state_file = STATE_DIR / cfg["state_file"]
         if state_file.exists():
             state_file.unlink()
+            removed = True
+        marker = _login_marker(platform)
+        if marker.exists():
+            marker.unlink()
             removed = True
 
     if removed:
