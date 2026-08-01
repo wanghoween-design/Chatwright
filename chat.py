@@ -32,7 +32,7 @@ MOCK_HTML = Path(__file__).resolve().parent / "tests" / "mock_chat.html"
 
 # 平台注册表：name -> (Provider 类, 登录态文件名, 描述, 特殊 URL 构造)
 PLATFORMS = {
-    "deepseek": (DeepSeekProvider, "chatwright_storage.json", "DeepSeek 网页版", None),
+    "deepseek": (DeepSeekProvider, "deepseek_storage.json", "DeepSeek 网页版", None),
     "kimi":     (KimiProvider,     "kimi_storage.json",     "Kimi 网页版",     None),
     "qwen":     (QwenProvider,     "qwen_storage.json",     "通义千问 网页版", None),
     "mock":     (MockProvider,     None,                    "本地演示（无登录）", "file://" + str(MOCK_HTML)),

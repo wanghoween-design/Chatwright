@@ -115,12 +115,21 @@ class WebChatProvider(ABC):
         last = ""  # 上一次轮询时的文本内容
         start = time.monotonic()  # 记录开始时间（单调时钟，不受系统时间调整影响）
         while time.monotonic() - start < timeout:  # 还没超时就继续轮询
+            await self._check_interrupt()  # 子类可在此检测登录弹窗等异常，快速失败
             cur = (await self._extract_last_reply()).strip()  # 获取当前最新回复文本
             if cur and cur == last:  # 文本非空且和上次一样 → 生成可能已结束
                 return  # 提前返回（正常完成路径）
             last = cur  # 更新"上次文本"，继续下一轮等待
             await self.page.wait_for_timeout(int(stable * 1000))  # 等 stable 秒后再检查
         # 超时了也正常返回（不抛异常），此时 last 里保存着已抓取到的部分文本
+
+    async def _check_interrupt(self) -> None:
+        """【可选钩子】等待回复期间的检查点。
+
+        子类可重写：检测登录弹窗、验证码等会阻塞回复的异常状态，
+        出现时抛异常快速失败，避免傻等到超时。
+        """
+        pass
 
     async def _extract_last_reply(self) -> str:
         """从页面上抓取最后一条助手消息的文本。

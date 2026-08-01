@@ -21,7 +21,7 @@ from chatwright.providers.kimi import DEFAULT_URL as KIMI_URL
 from chatwright.providers.qwen import DEFAULT_URL as QWEN_URL
 
 LOGIN_TARGETS = {
-    "deepseek": ("chatwright_storage.json", DEEPSEEK_URL),
+    "deepseek": ("deepseek_storage.json", DEEPSEEK_URL),
     "kimi":     ("kimi_storage.json",     KIMI_URL),
     "qwen":     ("qwen_storage.json",     QWEN_URL),
 }

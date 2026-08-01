@@ -9,7 +9,7 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 # 登录态（cookie / localStorage）持久化目录，避免每次都手动登录
 STATE_DIR = Path(__file__).resolve().parent.parent.parent / "state"
 # 默认登录态文件（DeepSeek 沿用此名，向后兼容）
-DEFAULT_STATE_FILENAME = "chatwright_storage.json"
+DEFAULT_STATE_FILENAME = "deepseek_storage.json"
 
 
 class BrowserManager:
@@ -22,9 +22,15 @@ class BrowserManager:
     避免 Kimi / Qwen / DeepSeek 互相覆盖 cookie。
     """
 
-    def __init__(self, headless: bool = True, state_filename: str = DEFAULT_STATE_FILENAME):
+    def __init__(
+        self,
+        headless: bool = True,
+        state_filename: str = DEFAULT_STATE_FILENAME,
+        load_storage: bool = True,
+    ):
         self.headless = headless
         self.state_path: Path = STATE_DIR / state_filename
+        self.load_storage = load_storage  # False = 不加载旧登录态（用于重新登录）
         self._pw = None
         self.browser: Browser | None = None
         self.context: BrowserContext | None = None
@@ -34,7 +40,7 @@ class BrowserManager:
         self._pw = await async_playwright().start()
         self.browser = await self._pw.chromium.launch(headless=self.headless)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        if self.state_path.exists():
+        if self.state_path.exists() and self.load_storage:
             # 复用上次保存的登录态
             self.context = await self.browser.new_context(storage_state=str(self.state_path))
         else:

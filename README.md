@@ -1,105 +1,107 @@
 # Chatwright 🦐
 
-> **Chat + Playwright** —— 把"用浏览器跟网页 AI 聊天"封装成一个标准 MCP 工具。
-> Agent 无需任何 API key，也能和网页版 AI（DeepSeek / Kimi / 通义千问 …）对话，底层是一个机器人在浏览器里替它敲字。
+> Chat + Playwright：把「用浏览器和网页 AI 聊天」封装成一个网页应用和标准接口。
+> **不需要任何 API Key**，底层是一个机器人在浏览器里替你输入问题、等待回复、把答案抄回来。
 
-## 它解决什么问题
+**一句话：打开一个网页，输入一个问题，勾选几个 AI，一次全问完，结果并排对比。**
 
-网页 AI 通常只暴露网页界面、不提供免费 API。传统做法要么付费买 key，要么被限流。
-Chatwright 换了个思路：**用 RPA（浏览器自动化）模拟人操作网页，把"和网页 AI 聊天"封装成 MCP 工具**。
-对上层 Agent 来说，它"以为"自己在调一个聊天接口；实际上背后是 Playwright 在浏览器里输入、等待流式生成、抓取回复。
+## 能做什么
 
-这是「RPA 封装成 MCP」最具体的落地形态之一——垂直场景 = 网页 AI 对话，护城河 = 流式完成检测 + 登录态持久化 +（规划中的）自愈式元素定位。
+| 功能 | 说明 |
+|------|------|
+| 多平台同时对话 | 一条消息同时发给 DeepSeek / Kimi / 通义千问，结果卡片并排展示 |
+| 网页版界面 | 输入框 + 平台勾选 + 实时进度 + 单条复制，浏览器里直接操作 |
+| 无需 API Key | 通过 Playwright 浏览器自动化操作网页版 AI |
+| 登录态自动保存 | 每个平台独立保存登录状态，登录一次长期有效 |
+| 登录管理 | 网页里直接「去登录 / 重新登录 / 注销」 |
+| 本地演示模式 | 内置 Mock 页面，不联网也能完整演示流程 |
+| 标准 MCP 接口 | 可接入 Claude Desktop / Cursor 等 MCP 客户端 |
+| 终端交互 | 也可以直接在命令行里和某个平台对话 |
 
-## 架构
+## 平台支持现状（2026-08 实测）
 
-```
-              MCP 客户端（Claude Desktop / Cursor / 自建 Agent）
-                          │  stdio
-                          ▼
-               ┌─────────────────────────┐
-               │     Chatwright MCP       │  暴露工具：
-               │      Server (server.py)  │   • web_ai_chat(message)
-               └───────────┬─────────────┘   • web_ai_new_session()
-                           │ 调用             • web_ai_save_login()
-                           ▼
-               ┌─────────────────────────┐
-               │  BrowserManager          │  Playwright 驱动 Chromium
-               │  (browser.py)            │  + 登录态(storage_state)持久化
-               └───────────┬─────────────┘
-                           │ 操作页面
-                           ▼
-               ┌─────────────────────────┐
-               │  Provider（可插拔）        │  WebChatProvider(模板方法基类)
-               │  providers/              │   ├─ DeepSeekProvider ✅ 已对接
-               │                          │   ├─ KimiProvider    🔧 选择器待校准
-               │                          │   ├─ QwenProvider    🔧 选择器待校准
-               │                          │   └─ MockProvider    ✅ 本地演示
-               └─────────────────────────┘
-```
-
-**设计模式：模板方法（Template Method）**
-
-通用对话流程在抽象基类 `WebChatProvider` 中定义，各平台只需重写三个钩子：
-
-| 钩子方法 | 职责 |
-|---------|------|
-| `_after_open()` | 打开页面后的处理（如登录态检测、关闭弹窗） |
-| `_type_and_submit(message)` | 在输入框中填入消息并提交 |
-| `_bubbles()` | 定位页面上的"助手消息气泡"元素 |
-
-因此新增一个网页 AI（ChatGPT / Gemini 网页版 …）只需写一个几十行的 Provider。
-
-## 当前进度
-
-| 模块 | 状态 | 说明 |
+| 平台 | 状态 | 说明 |
 |------|------|------|
-| 基类 `WebChatProvider` | ✅ 完成 | 模板方法模式，流式完成检测（防抖 1.5s） |
-| `BrowserManager` | ✅ 完成 | Playwright 驱动 + 多平台独立登录态持久化 |
-| `MockProvider` + mock 页面 | ✅ 完成 | 本地演示页，用于无网络自测 |
-| `DeepSeekProvider` | ✅ 基本可用 | 已有登录态文件，选择器为启发式写法 |
-| `KimiProvider` | 🔧 骨架就绪 | 输入框选择器已确认（`.chat-input-editor`），回复气泡待登录后校准 |
-| `QwenProvider` | 🔧 骨架就绪 | 选择器全部为启发式猜测，需登录后实测校准 |
-| MCP Server (`server.py`) | ✅ 基本可用 | stdio 传输，暴露 3 个工具 |
-| 终端交互 (`chat.py`) | ✅ 完成 | 支持 `--deepseek / --kimi / --qwen / --mock` 多平台切换 |
-| 统一登录助手 | ✅ 完成 | `tests/login_any.py <平台名>`，手动登录一次后自动保存 |
+| DeepSeek | ✅ 可用 | 需要登录一次（在页面点「去登录」） |
+| 通义千问 | ✅ 可用 | www.qianwen.com，游客模式直接可用，无需登录 |
+| Kimi | 🔧 需登录 | 输入框已校准，但 Kimi 强制要求登录后才能对话 |
+| 本地演示（Mock） | ✅ 可用 | 无需登录、无需网络 |
 
-## 安装
+> 注：Kimi / 通义等网页版产品可能调整页面结构，若某平台失效，按测试目录里的探针脚本重新校准即可。
+
+## 快速开始（Windows）
+
+### 方式一：双击启动（最简单）
+
+1. 双击项目根目录的 **`启动网站.bat`**
+2. 会自动弹出黑色服务窗口，并打开浏览器访问 `http://127.0.0.1:8765`
+3. 想停止服务：关掉黑色窗口即可
+
+### 方式二：命令行启动
 
 ```bash
 cd Chatwright
-python -m venv .venv && .venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-playwright install chromium
+.venv\Scripts\python run_web.py
 ```
 
-依赖：`mcp>=1.2.0,<2` + `playwright>=1.40.0`
+然后手动打开浏览器访问 **http://127.0.0.1:8765**
 
-## 运行
-
-### 1）本地自测（无需登录，推荐先跑这个验证流水线）
+### 首次安装（全新环境）
 
 ```bash
-set PYTHONPATH=src
-.venv\Scripts\python tests\test_mock.py
+cd Chatwright
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\playwright install chromium
 ```
 
-会打开无头浏览器，对接 `tests/mock_chat.html`，输出模拟回复并断言成功。
+> ⚠️ 不要直接双击 `src/chatwright/web/static/index.html` 打开页面——那是纯静态文件，
+> 连不上后端，平台列表不会显示。必须通过上面两种方式启动服务后访问 `http://127.0.0.1:8765`。
 
-### 2）终端交互式对话
+## 网页版使用说明
+
+### 发送问题
+
+1. 在输入框输入问题（支持中文，按 `Ctrl + Enter` 快速发送）
+2. 勾选要问的平台（默认全选）
+3. 点击「发送到所选平台」
+4. 每个平台一张卡片，状态从「等待中 → 对话中 → 完成 / 失败」实时变化
+5. 完成后点卡片上的「复制」，可以单独复制某条回复
+
+### 登录 / 重新登录 / 注销
+
+平台卡片右侧会显示登录状态和操作按钮：
+
+| 状态 | 按钮 | 作用 |
+|------|------|------|
+| 未登录 | 「去登录」 | 弹出浏览器窗口，手动登录一次，回到页面点「已登录，保存」 |
+| 已登录 | 「重登」 | 用全新浏览器会话重新登录（适合换账号 / 登录态失效时） |
+| 已登录 | 「注销」 | 删除本地保存的登录状态，之后该平台需要重新登录 |
+
+登录流程：点按钮 → 弹出真实浏览器窗口 → 在窗口里登录 → 回到网页点「已登录，保存」
+→ 登录态写入本地（`state/` 目录），下次免登录。
+
+### 常见问题
+
+- **Kimi 报「需要先登录才能对话」**：正常，Kimi 强制要求登录。点 Kimi 卡片上的「去登录」完成登录后重试。
+- **某个平台失败会影响其他平台吗？** 不会。每个平台独立运行，失败只显示在它自己的卡片上。
+- **DeepSeek 登录态失效了？** 点 DeepSeek 卡片上的「重登」重新登录一次即可。
+- **登录窗口没弹出来？** 检查浏览器是否拦截了弹出窗口，或看黑色服务窗口里有没有报错。
+- **点「已登录，保存」提示登录没完成？** 说明浏览器窗口里的登录还没成功（登录框仍在）。
+  回到弹出的浏览器窗口完成登录，再点一次「已登录，保存」即可。
+- **每次发送都是新会话**：当前每次发送都会开新对话，多轮连续对话在路线图中。
+
+## 终端版（可选）
 
 ```bash
-# 先设置浏览器路径（Windows）
 set PLAYWRIGHT_BROWSERS_PATH=%cd%\.pw-browsers
-
-# 选择平台
-.venv\Scripts\python chat.py              # DeepSeek（默认）
-.venv\Scripts\python chat.py --kimi       # Kimi
-.venv\Scripts\python chat.py --qwen       # 通义千问
-.venv\Scripts\python chat.py --mock       # 本地演示（无需登录）
+.venv\Scripts\python chat.py            # DeepSeek（默认）
+.venv\Scripts\python chat.py --kimi     # Kimi
+.venv\Scripts\python chat.py --qwen     # 通义千问
+.venv\Scripts\python chat.py --mock     # 本地演示
 ```
 
-首次使用新平台需先手动登录一次：
+首次使用某平台需要先登录（登录态保存在 `state/` 目录）：
 
 ```bash
 .venv\Scripts\python tests\login_any.py deepseek
@@ -107,9 +109,7 @@ set PLAYWRIGHT_BROWSERS_PATH=%cd%\.pw-browsers
 .venv\Scripts\python tests\login_any.py qwen
 ```
 
-登录态自动保存到 `state/<平台>_storage.json`，之后直接用。
-
-### 3）作为 MCP Server 启动
+## MCP 版（可选）
 
 ```bash
 cd src
@@ -117,12 +117,7 @@ set PYTHONPATH=.
 .venv\Scripts\python -m chatwright.server
 ```
 
-默认 stdio 传输。首次对接真实网页时浏览器以**可见模式**启动，
-请在弹出的窗口里手动登录一次；登录态会自动保存到 `state/` 目录，之后复用。
-
-### 4）接 Claude Desktop
-
-在 Claude Desktop 的 `claude_desktop_config.json` 加入：
+接入 Claude Desktop，在 `claude_desktop_config.json` 中添加：
 
 ```json
 {
@@ -136,60 +131,70 @@ set PYTHONPATH=.
 }
 ```
 
-重启 Claude Desktop 后，直接对它说"用 Chatwright 跟网页 DeepSeek 聊一句：你好"即可。
-
-## 提供的工具
+暴露的工具：
 
 | 工具 | 说明 |
 |------|------|
-| `web_ai_chat(message, mock=False, timeout=120)` | 发消息并等回完，返回回复文本；`mock=True` 走本地演示页 |
-| `web_ai_new_session()` | 开新对话（清空上下文） |
-| `web_ai_save_login()` | 保存当前登录态，下次自动复用 |
+| `web_ai_chat(message, mock=False, timeout=120)` | 和网页 AI 聊天并返回回复文本 |
+| `web_ai_new_session()` | 开启新对话（清空上下文） |
+| `web_ai_save_login()` | 保存当前浏览器登录态，下次自动复用 |
+
+## 架构
+
+```
+        网页版 UI（浏览器）                  MCP 客户端（Claude / Cursor）
+              │                                   │
+        FastAPI 后端 (webapp.py)              MCP Server (server.py)
+              └────────────────┬──────────────────┘
+                               │
+                      BrowserManager (browser.py)
+                      Playwright 驱动 Chromium + 登录态持久化
+                               │
+                     Provider（可插拔，模板方法模式）
+               DeepSeek ✅ / Kimi 🔧 / Qwen ✅ / Mock ✅
+```
+
+核心设计：所有网页 AI 的对话流程都一样（打开页面 → 输入发送 → 等流式回复 → 抓取结果），
+差异只在页面元素选择器。基类 `WebChatProvider` 用模板方法模式固定通用流程，
+新平台只需实现三个钩子：
+
+| 钩子方法 | 职责 |
+|----------|------|
+| `_after_open()` | 打开页面后的处理（登录检测、关弹窗） |
+| `_type_and_submit(message)` | 在输入框填入消息并提交 |
+| `_bubbles()` | 定位页面上的助手回复气泡 |
 
 ## 项目结构
 
 ```
 Chatwright/
-├── chat.py                       # 终端交互式对话入口（多平台）
-├── requirements.txt              # mcp + playwright
-├── src/
-│   └── chatwright/
-│       ├── __init__.py           # 包入口，版本号
-│       ├── browser.py            # BrowserManager：浏览器生命周期 + 登录态持久化
-│       ├── server.py             # MCP Server 入口，暴露 3 个工具
-│       └── providers/
-│           ├── __init__.py
-│           ├── base.py           # WebChatProvider 抽象基类（模板方法模式）
-│           ├── deepseek.py       # DeepSeek 网页版 Provider
-│           ├── kimi.py           # Kimi 网页版 Provider
-│           ├── qwen.py           # 通义千问网页版 Provider
-│           └── mock.py           # 本地演示用 Provider
-├── tests/
-│   ├── mock_chat.html            # 本地模拟 AI 聊天页面
-│   ├── test_mock.py              # Mock 端到端自测
-│   ├── test_deepseek.py          # DeepSeek 真实站测试（需手动登录）
-│   ├── run_deepseek.py           # 用已保存登录态快速测试 DeepSeek
-│   ├── probe_deepseek.py         # DeepSeek DOM 探针（校准选择器用）
-│   ├── probe_kimi_qwen.py        # Kimi / 通义 DOM 探针
-│   ├── probe_kimi_interactive.py # Kimi 交互式探针
-│   └── login_any.py              # 统一登录助手
-└── state/
-    └── chatwright_storage.json   # DeepSeek 登录态（自动生成）
+├── 启动网站.bat                 # 双击启动网页版（自动打开浏览器）
+├── run_web.py                   # 网页版启动入口
+├── chat.py                      # 终端交互入口
+├── requirements.txt             # 依赖：mcp / playwright / fastapi / uvicorn
+├── src/chatwright/
+│   ├── webapp.py                # 网页版后端（FastAPI）：聊天任务 + 登录管理
+│   ├── web/static/index.html    # 网页版前端
+│   ├── server.py                # MCP Server
+│   ├── browser.py               # 浏览器生命周期 + 登录态持久化
+│   └── providers/               # 各平台 Provider（模板方法模式）
+│       ├── base.py              # 抽象基类（通用流程）
+│       ├── deepseek.py / kimi.py / qwen.py / mock.py
+├── tests/                       # 端到端自测、DOM 探针、登录助手
+└── state/                       # 登录态文件（自动生成，已 gitignore）
 ```
 
-## ⚠️ 重要声明（必读）
+## 路线图
 
-- 自动化访问网页 AI **可能违反其服务条款**，仅限**个人学习 / 作品集演示**使用，请勿作为生产方案对外售卖或大规模调用。
-- 网页 AI 的 DOM 结构会变动，真实站选择器（见各 `providers/*.py`）需按实测校准。
-
-## 路线图（v1+）
-
-- [ ] **自愈式元素定位**：选择器漂移时由 LLM 依据页面快照重新定位，抵抗 UI 改版
-- [ ] 多 Provider 完善：Kimi / 通义千问选择器校准 → ChatGPT / Gemini 网页版
-- [ ] 流式返回：边生成边回传给 Agent（而非等整段完成）
-- [ ] 会话管理：多会话切换、历史持久化
+- [ ] Kimi 登录后校准回复气泡选择器
+- [ ] 自愈式元素定位：选择器漂移时自动重新定位，抵抗 UI 改版
+- [ ] 多轮连续对话（当前每次发送都是新会话）
+- [ ] 流式返回：边生成边显示
 - [ ] headless 生产化 + 反检测策略
 
----
+## ⚠️ 重要声明
 
-> 项目名由来：Chat + Playwright 双关，发音近 "chat right"。
+- 自动化访问网页 AI 可能违反其服务条款，本项目仅用于**个人学习 / 作品集演示**，
+  请勿作为生产方案对外售卖或大规模调用。
+- 网页 AI 的 DOM 结构会变动，平台选择器失效时需按实测重新校准
+  （参考 `tests/` 下的探针脚本）。

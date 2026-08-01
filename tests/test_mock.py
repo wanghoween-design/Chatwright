@@ -6,8 +6,13 @@
 """
 
 import asyncio
+import io
 import sys
 from pathlib import Path
+
+# Windows 控制台默认 GBK，强制 UTF-8 输出，避免打印 emoji/中文时崩溃
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 

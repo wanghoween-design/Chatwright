@@ -114,7 +114,7 @@ async def web_ai_save_login() -> str:
     ctx = mcp.get_context().request_context.lifespan_context
     bm: BrowserManager = ctx["bm"]
     await bm.save_state()  # 将浏览器的 cookie、localStorage 等持久化到本地 JSON 文件
-    return f"登录态已保存到 {bm.__class__ and 'state/chatwright_storage.json'}"
+    return f"登录态已保存到 {bm.state_path}"
 
 
 if __name__ == "__main__":

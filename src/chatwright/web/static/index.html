@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chatwright · 多平台 AI 对比</title>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --card: #ffffff;
+    --line: #e4e8f0;
+    --text: #1f2430;
+    --muted: #7a8296;
+    --primary: #2563eb;
+    --ok: #16a34a;
+    --err: #dc2626;
+    --run: #2563eb;
+    --wait: #9aa3b5;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+  }
+  header {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 32px 20px 8px;
+  }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: 0.3px; }
+  header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px 20px 80px; }
+
+  .composer {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  }
+  textarea {
+    width: 100%;
+    min-height: 88px;
+    resize: vertical;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  textarea:focus { border-color: var(--primary); }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+  }
+  .platforms { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pchip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 13px;
+    background: #fafbfe;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s;
+  }
+  .pchip:hover { border-color: var(--primary); }
+  .pchip.on { background: #eff4ff; border-color: var(--primary); }
+  .pchip input { display: none; }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--wait); flex: none;
+  }
+  .pchip .dot.ok { background: var(--ok); }
+  .pchip .dot.no { background: #f59e0b; }
+  .pchip .lbl { font-weight: 600; }
+  .pchip .note { color: var(--muted); font-size: 12px; }
+  .pchip .login {
+    border: none; background: none; color: var(--primary);
+    font-size: 12px; cursor: pointer; padding: 0;
+  }
+  .pchip .login:hover { text-decoration: underline; }
+  .pchip .logout {
+    border: none; background: none; color: #b91c1c;
+    font-size: 12px; cursor: pointer; padding: 0;
+  }
+  .pchip .logout:hover { text-decoration: underline; }
+  .buttons { display: flex; gap: 8px; }
+  button.primary {
+    border: none; background: var(--primary); color: #fff;
+    border-radius: 8px; padding: 9px 18px; font-size: 14px;
+    cursor: pointer; font-weight: 600;
+  }
+  button.primary:disabled { opacity: 0.55; cursor: not-allowed; }
+  button.ghost {
+    border: 1px solid var(--line); background: #fff; color: var(--muted);
+    border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+  }
+  button.ghost:hover { color: var(--text); border-color: var(--muted); }
+
+  .round {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-top: 16px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  }
+  .round-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; flex-wrap: wrap;
+  }
+  .round-head .q { font-weight: 600; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+  .round-head .time { color: var(--muted); font-size: 12px; flex: none; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    min-height: 120px;
+  }
+  .card .top { display: flex; align-items: center; gap: 8px; }
+  .card .name { font-weight: 700; font-size: 14px; }
+  .badge {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    font-weight: 600;
+  }
+  .badge.wait { background: #eef0f5; color: var(--wait); }
+  .badge.run { background: #e3edff; color: var(--run); }
+  .badge.ok  { background: #e5f6ec; color: var(--ok); }
+  .badge.err { background: #fdeaea; color: var(--err); }
+  .card .body {
+    font-size: 13.5px; white-space: pre-wrap; word-break: break-word;
+    color: #333b4d; max-height: 340px; overflow-y: auto;
+  }
+  .card .body.err { color: var(--err); }
+  .card .foot { display: flex; justify-content: space-between; align-items: center; }
+  .card .elapsed { color: var(--muted); font-size: 11.5px; }
+  .card .copy {
+    border: 1px solid var(--line); background: #fff; color: var(--muted);
+    border-radius: 6px; font-size: 12px; padding: 3px 10px; cursor: pointer;
+  }
+  .card .copy:hover { color: var(--text); }
+  .spinner {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #c7d4f5; border-top-color: var(--primary);
+    animation: spin 0.8s linear infinite;
+    display: inline-block; flex: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .login-box {
+    margin-top: 10px; padding: 10px 12px;
+    border: 1px dashed var(--primary); border-radius: 8px;
+    background: #f6f9ff; font-size: 13px;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .login-box .msg { flex: 1; min-width: 200px; }
+  .login-box button {
+    border: 1px solid var(--primary); background: #fff; color: var(--primary);
+    border-radius: 6px; font-size: 12.5px; padding: 4px 12px; cursor: pointer;
+  }
+  .login-box button.done { background: var(--primary); color: #fff; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1f2430; color: #fff; padding: 10px 18px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    z-index: 10; max-width: 80vw;
+  }
+  .toast.show { opacity: 0.95; }
+  .empty {
+    text-align: center; color: var(--muted); font-size: 14px;
+    padding: 40px 0;
+  }
+  .offline {
+    background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+    border-radius: var(--radius); padding: 14px 16px; font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .offline code {
+    background: #fee2e2; border-radius: 4px; padding: 1px 6px;
+    font-size: 13px;
+  }
+  .offline a { color: var(--primary); }
+  .perr {
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    border-radius: 8px; padding: 10px 12px; font-size: 13px;
+    margin-top: 10px; display: flex; gap: 10px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .perr button {
+    border: 1px solid #d97706; background: #fff; color: #92400e;
+    border-radius: 6px; font-size: 12.5px; padding: 3px 12px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🦐 Chatwright</h1>
+  <p>一条消息，同时发给多个网页 AI，结果并排对比 —— 无需任何 API Key。</p>
+</header>
+
+<main>
+  <div id="offline-banner" class="offline" hidden>
+    ⚠️ 当前是直接打开的静态页面，连不上 Chatwright 后端，所以平台列表无法加载。
+    请先运行 <code>.venv\Scripts\python run_web.py</code>（或双击项目里的
+    <code>启动网站.bat</code>），然后访问 <a href="http://127.0.0.1:8765">http://127.0.0.1:8765</a>。
+  </div>
+  <section class="composer">
+    <textarea id="input" placeholder="输入你想问的问题，比如：用一句话介绍你自己"></textarea>
+    <div class="row">
+      <div class="platforms" id="platforms"></div>
+      <div class="buttons">
+        <button class="ghost" id="clear">清空结果</button>
+        <button class="primary" id="send">发送到所选平台</button>
+      </div>
+    </div>
+    <div id="platform-error" class="perr" hidden>
+      平台列表加载失败：<span id="platform-error-msg"></span>
+      <button id="retry-platforms">重新加载</button>
+    </div>
+    <div id="loginbox"></div>
+  </section>
+
+  <section id="rounds"></section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const input = $("#input"), sendBtn = $("#send"), roundsBox = $("#rounds");
+let platformMeta = {};       // id -> {label, desc, needs_login, logged_in}
+let activeLogin = null;      // 正在登录的平台 id
+const timers = {};           // job_id -> 轮询定时器
+const sentAt = {};           // job_id -> 开始时间
+
+// ---------------------------------------------------------------- 平台选择
+async function loadPlatforms(tries = 3) {
+  const errBox = $("#platform-error");
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch("/api/platforms");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const list = await res.json();
+      platformMeta = {};
+      list.forEach((p) => { platformMeta[p.id] = p; });
+      renderPlatforms();
+      errBox.hidden = true;
+      return;
+    } catch (e) {
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, 1500));
+      else {
+        $("#platform-error-msg").textContent = e.message || "无法连接后端服务";
+        errBox.hidden = false;
+      }
+    }
+  }
+}
+
+function renderPlatforms() {
+  const box = $("#platforms");
+  box.innerHTML = "";
+  Object.values(platformMeta).forEach((p) => {
+    const chip = document.createElement("div");
+    chip.className = "pchip on";
+    chip.dataset.id = p.id;
+    const dotCls = !p.needs_login ? "ok" : (p.logged_in ? "ok" : "no");
+    const authBtns = !p.needs_login ? "" : (p.logged_in
+      ? `<button class="login" data-relogin="${p.id}">重登</button>
+         <button class="logout" data-logout="${p.id}">注销</button>`
+      : `<button class="login" data-login="${p.id}">去登录</button>`);
+    chip.innerHTML = `
+      <span class="dot ${dotCls}"></span>
+      <span class="lbl">${p.label}</span>
+      <span class="note">${p.needs_login ? (p.logged_in ? "已登录" : "未登录") : "免登录"}</span>
+      ${authBtns}
+    `;
+    chip.addEventListener("click", (e) => {
+      if (e.target.matches("[data-login]")) {
+        e.preventDefault();
+        startLogin(p.id);
+        return;
+      }
+      if (e.target.matches("[data-relogin]")) {
+        e.preventDefault();
+        startLogin(p.id);
+        return;
+      }
+      if (e.target.matches("[data-logout]")) {
+        e.preventDefault();
+        logoutPlatform(p.id);
+        return;
+      }
+      chip.classList.toggle("on");
+    });
+    box.appendChild(chip);
+  });
+}
+
+function selectedPlatforms() {
+  return [...document.querySelectorAll("#platforms .pchip.on")].map((c) => c.dataset.id);
+}
+
+// ---------------------------------------------------------------- 登录流程
+async function startLogin(id) {
+  if (activeLogin) { toast("先完成当前登录流程再操作其他平台"); return; }
+  try {
+    const r = await fetch(`/api/login/${id}`, { method: "POST" }).then((x) => x.json());
+    activeLogin = id;
+    $("#loginbox").innerHTML = `
+      <div class="login-box">
+        <span class="msg">${r.message || "请在打开的浏览器窗口中完成登录"}</span>
+        <button class="done" data-finish="save">已登录，保存</button>
+        <button data-finish="cancel">取消</button>
+      </div>`;
+    toast("浏览器窗口已弹出，请完成登录");
+  } catch (e) {
+    toast("打开登录窗口失败：" + (e.message || e));
+  }
+}
+
+async function finishLogin(save) {
+  const id = activeLogin;
+  if (!id) return;
+  try {
+    const r = await fetch(`/api/login/${id}/finish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ save }),
+    }).then((x) => x.json());
+    if (r.login_pending) {
+      // 登录还没完成：保留登录框，让用户回到浏览器窗口继续登录
+      toast(r.message || "登录尚未完成，请先在浏览器窗口里完成登录");
+      return;
+    }
+    activeLogin = null;
+    $("#loginbox").innerHTML = "";
+    toast(r.message || (save ? "登录态已保存" : "已取消"));
+  } catch (e) {
+    toast("操作失败：" + (e.message || e));
+  }
+  await loadPlatforms();
+}
+
+async function logoutPlatform(id) {
+  const p = platformMeta[id];
+  if (!confirm(`确定注销 ${p ? p.label : id} 的本地登录吗？注销后需要重新登录才能使用。`)) return;
+  try {
+    const r = await fetch(`/api/logout/${id}`, { method: "POST" }).then((x) => x.json());
+    toast(r.message || "已注销");
+  } catch (e) {
+    toast("注销失败：" + (e.message || e));
+  }
+  await loadPlatforms();
+}
+
+// ---------------------------------------------------------------- 聊天任务
+async function sendMessage() {
+  const message = input.value.trim();
+  const picks = selectedPlatforms();
+  if (!message) { toast("先输入一条消息"); return; }
+  if (!picks.length) { toast("至少勾选一个平台"); return; }
+
+  sendBtn.disabled = true;
+  try {
+    const { job_id } = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, platforms: picks }),
+    }).then((r) => r.json());
+
+    sentAt[job_id] = Date.now();
+    addRound(job_id, message, picks);
+    timers[job_id] = setInterval(() => pollJob(job_id), 1200);
+    pollJob(job_id);
+  } catch (e) {
+    toast("发送失败：" + (e.message || e));
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+async function pollJob(jobId) {
+  let job;
+  try {
+    job = await fetch(`/api/jobs/${jobId}`).then((r) => r.json());
+  } catch { return; }
+  updateRound(jobId, job);
+  const results = Object.values(job.results || {});
+  const finished = results.length > 0 && results.every((r) => r.status !== "running");
+  if (finished) {
+    clearInterval(timers[jobId]);
+    delete timers[jobId];
+  }
+}
+
+function addRound(jobId, message, picks) {
+  const div = document.createElement("div");
+  div.className = "round";
+  div.dataset.job = jobId;
+  div.innerHTML = `
+    <div class="round-head">
+      <span class="q"></span>
+      <span class="time">刚刚</span>
+    </div>
+    <div class="grid"></div>`;
+  roundsBox.prepend(div);
+  updateRound(jobId, { message, results: {} });
+}
+
+function updateRound(jobId, job) {
+  const div = roundsBox.querySelector(`.round[data-job="${jobId}"]`);
+  if (!div) return;
+  const meta = platformMeta;
+  const elapsed = Math.round((Date.now() - (sentAt[jobId] || Date.now())) / 1000);
+  div.querySelector(".q").textContent = job.message || "";
+  div.querySelector(".time").textContent = `${elapsed}s`;
+
+  const grid = div.querySelector(".grid");
+  const picks = Object.keys(job.results || {}).length ? Object.keys(job.results) : null;
+  const showIds = picks || Object.keys(meta);
+  grid.innerHTML = showIds.map((id) => cardHtml(id, (job.results || {})[id])).join("");
+  grid.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", () => copyText(btn.dataset.copy, btn));
+  });
+}
+
+function cardHtml(id, res) {
+  const p = platformMeta[id];
+  if (!p) return "";
+  const state = res ? res.status : "wait";
+  const badge = {
+    wait: ["wait", "等待中"],
+    running: ["run", "对话中"],
+    done: ["ok", "完成"],
+    error: ["err", "失败"],
+  }[state] || ["wait", "等待中"];
+
+  let body, foot = `<span class="elapsed">${res && res.elapsed != null ? res.elapsed + "s" : ""}</span>`;
+  if (state === "done") {
+    body = `<div class="body">${escapeHtml(res.reply || "(空回复)")}</div>`;
+    foot = `<span class="elapsed">${res.elapsed}s</span>
+            <button class="copy" data-copy="${escapeAttr(res.reply || "")}">复制</button>`;
+  } else if (state === "error") {
+    body = `<div class="body err">${escapeHtml(res.error || "未知错误")}</div>`;
+  } else if (state === "running") {
+    body = `<div class="body" style="color:var(--muted)">正在网页里输入并等待 AI 流式回复…</div>`;
+  } else {
+    body = `<div class="body" style="color:var(--muted)">排队中…</div>`;
+  }
+
+  return `
+    <div class="card">
+      <div class="top">
+        ${state === "running" ? `<span class="spinner"></span>` : ""}
+        <span class="name">${p.label}</span>
+        <span class="badge ${badge[0]}">${badge[1]}</span>
+      </div>
+      ${body}
+      <div class="foot">${foot}</div>
+    </div>`;
+}
+
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const old = btn.textContent;
+    btn.textContent = "已复制";
+    setTimeout(() => (btn.textContent = old), 1200);
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s).replace(/\n/g, "&#10;"); }
+
+let toastTimer;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
+}
+
+// ---------------------------------------------------------------- 事件绑定
+$("#send").addEventListener("click", sendMessage);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendMessage();
+});
+$("#clear").addEventListener("click", () => {
+  Object.values(timers).forEach(clearInterval);
+  for (const k of Object.keys(timers)) delete timers[k];
+  roundsBox.innerHTML = "";
+  maybeEmptyHint();
+});
+$("#loginbox").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-finish]");
+  if (btn) finishLogin(btn.dataset.finish === "save");
+});
+$("#retry-platforms").addEventListener("click", () => loadPlatforms(3));
+
+// 如果是直接双击 HTML 文件打开的（file://），说明没有连上后端，
+// 此时隐藏输入区并提示正确启动方式；只有通过服务器访问才加载平台列表
+if (location.protocol === "file:") {
+  $("#offline-banner").hidden = false;
+  document.querySelector(".composer").style.display = "none";
+} else {
+  maybeEmptyHint();
+  loadPlatforms();
+}
+function maybeEmptyHint() {
+  if (!roundsBox.children.length) {
+    roundsBox.innerHTML = `<div class="empty">输入一个问题，勾选平台，点“发送”——Chatwright 会用浏览器替你分别打开各网页 AI，并排返回结果。</div>`;
+  }
+}
+</script>
+</body>
+</html>
