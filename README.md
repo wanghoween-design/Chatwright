@@ -5,7 +5,17 @@
 
 **一句话：打开一个网页，输入一个问题，勾选几个 AI，一次全问完，结果并排对比。**
 
-当前版本：**v1.5.5**（页面标题旁会显示版本号，重启后核对是否加载了新代码）
+当前版本：**v1.5.6**（页面标题旁会显示版本号，重启后核对是否加载了新代码）
+
+## 界面预览
+
+8-bit 像素科技风。左侧管理对话，中间输入问题、勾选平台，一键群发：
+
+![Chatwright 界面总览](docs/screenshots/ui-overview.png)
+
+输入区细节：每个平台可单独勾选「思考模式」，平台卡片上直接查看登录状态、重登 / 注销：
+
+![输入区细节](docs/screenshots/ui-composer.png)
 
 ## 能做什么
 
@@ -114,7 +124,7 @@ python -m venv .venv
 - **元宝 / 豆包返回了思考过程或推荐内容？** 已内置过滤（思考块按类名排除、
   推荐/广告/输入按钮块按结构与文本特征排除）。
 - **重启服务后版本没变？** 双击 `启动网站.bat` 后在页面按 `Ctrl+F5` 强制刷新，
-  标题旁应显示 v1.5.5。
+  标题旁应显示 v1.5.6。
 
 ## 终端版（可选）
 
@@ -167,6 +177,9 @@ set PYTHONPATH=.
 | `web_ai_new_session()` | 开启新对话（清空上下文） |
 | `web_ai_save_login()` | 保存当前浏览器登录态，下次自动复用 |
 
+> 注：MCP Server 目前只对接 **DeepSeek**（`mock=True` 可接本地演示页），
+> 多平台能力暂只在网页版提供，对齐计划见路线图。
+
 ## 架构
 
 ```
@@ -199,9 +212,10 @@ Chatwright/
 ├── chat.py                      # 终端交互入口
 ├── requirements.txt             # 依赖：mcp / playwright / fastapi / uvicorn
 ├── DEVELOPMENT_LOG.md           # 开发问题日志（每条含现象/病因/解决，可 grep 检索）
+├── docs/screenshots/            # README 界面截图
 ├── src/chatwright/
 │   ├── webapp.py                # 网页版后端（FastAPI）：聊天任务 + 登录管理 + 调试接口
-│   ├── web/static/index.html    # 网页版前端
+│   ├── web/static/index.html    # 网页版前端（8-bit 像素风，单文件）
 │   ├── server.py                # MCP Server
 │   ├── browser.py               # 浏览器生命周期 + 登录态持久化 + 反检测
 │   └── providers/               # 各平台 Provider（模板方法模式）
@@ -222,7 +236,9 @@ Chatwright/
 
 ## 路线图
 
+- [ ] 全平台重新实测一轮（网页 AI 的 DOM 会漂移，距上次实测已有一段时间）
 - [ ] Coze 式画布布局：左侧模型列表 + 中间画布 + 并行/链式连线 + 连线指令节点
+- [ ] MCP Server 对齐多平台（目前仅 DeepSeek）
 - [ ] 各平台模型切换列表校准（目前用网页默认模型）
 - [ ] 文件上传的逐平台校准
 - [ ] 自愈式元素定位：选择器漂移时自动重新定位

@@ -6,9 +6,10 @@
 
     # 选择平台（默认 deepseek）
     .venv/Scripts/python chat.py             # DeepSeek
-    .venv/Scripts/python chat.py --kimi      # Kimi
     .venv/Scripts/python chat.py --qwen      # 通义千问
-    .venv/Scripts/python chat.py --mock      # 本地演示（无需登录）
+    .venv/Scripts/python chat.py --doubao    # 豆包
+    .venv/Scripts/python chat.py --yuanbao   # 元宝
+    .venv/Scripts/python chat.py --zhipu     # 智谱
 
 对话方式：终端输入消息按回车发送；输入 exit / quit / 退出 结束。
 
