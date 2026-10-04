@@ -98,7 +98,7 @@ PLATFORMS: dict[str, dict[str, Any]] = {
 app = FastAPI(title="Chatwright Web UI")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-APP_VERSION = "1.5.5"
+APP_VERSION = "1.5.6"
 
 CONFIG_FILE = STATE_DIR / "config.json"
 

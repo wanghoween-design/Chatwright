@@ -24,6 +24,8 @@
   --pixel-sm: polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px));
 }
 * { box-sizing: border-box; }
+/* hidden 属性优先级最高：防止 .perr 等自带 display:flex 的类把 hidden 元素重新显示出来 */
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font-family: "VT323", "Courier New", monospace;
